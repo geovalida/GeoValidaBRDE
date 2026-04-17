@@ -8971,7 +8971,7 @@ if (data.length > 0) {
                               
                               // Só considera “sem sobreposição” se realmente não houver interseção relevante
                               if ((!intersection || intersectionArea <= MIN_OVERLAP_TOLERANCE) && glebaArea > MIN_OVERLAP_TOLERANCE) {
-                                  const msg = `AVISO G${glebaIndex}: Gleba não tem sobreposição com o CAR (0%). Sugestão: Excluir a gleba ou verificar no mapa a existência de CAR que se sobreponha à área informada.`;
+                                  const msg = `AVISO G${glebaIndex}: Gleba não tem sobreposição com o CAR (0%). Insira um CAR ou verifique no mapa a existência de CAR que se sobreponha à área informada.`;
                                   errors.push(msg);
                                   initialErrorListForVisualDisplay.push(msg);
                                   
@@ -9052,10 +9052,10 @@ if (data.length > 0) {
           const hasCarFile = carInput && carInput.files.length > 0;
           const hasCarCode = carCodes && carCodes.length > 0;
           if (!hasCarFile && !hasCarCode && glebaData.length > 0) {
-              const msg = `AVISO: Validação de extravasamento e sobreposição NÃO realizada (CAR ausente), insira um CAR ou analise as areas sob as glebas.`;
+              const msg = `AVISO: Validação de extravasamento e sobreposição NÃO realizada (CAR ausente). Insira um CAR ou verifique no mapa a existência de CAR que se sobreponha à área informada.`;
               errors.push(msg);
               initialErrorListForVisualDisplay.push(msg);
-              const logEntry = { entidade: 'Sistema', tipo_evento: 'aviso_validacao', severidade: 'warning', codigo: 'NO_CAR_VALIDATION', mensagem: 'Validação de extravasamento e sobreposição NÃO realizada (CAR ausente), insira um CAR ou analise a area sob a gleba.' };
+              const logEntry = { entidade: 'Sistema', tipo_evento: 'aviso_validacao', severidade: 'warning', codigo: 'NO_CAR_VALIDATION', mensagem: 'Validação de extravasamento e sobreposição NÃO realizada (CAR ausente).Insira um CAR ou verifique no mapa a existência de CAR que se sobreponha à área informada.' };
               relatorio.eventos.push(logEntry);
               if (isInitialValidation) initialErrors.push(logEntry);
           }
