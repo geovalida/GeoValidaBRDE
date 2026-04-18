@@ -271,6 +271,7 @@ async function fetchIbamaEmbargosByBbox(bboxParam) {
         if (geojson.crs) delete geojson.crs;
         
         if (geojson.features && geojson.features.length > 0) {
+            window.ibamaQueryError = false;
             console.log('[IBAMA] GeoJSON retornado:', geojson.features.length, 'features found.');
             
             // Limpa camadas anteriores do mapa
@@ -2172,7 +2173,9 @@ if (ibamaResult&& ibamaResult.length > 0) {
                                 }
                             } catch (err) {
                                 console.warn('[PRODES][FALLBACK] Erro rede:', err);
-   			        window.prodesQueryError = true; 
+                                if (prodesLayers.length === 0) {
+                                    window.prodesQueryError = true;
+                                }   
                             }
                         }
                         if (!feature.properties) feature.properties = {};
@@ -2462,18 +2465,24 @@ if (ibamaResult&& ibamaResult.length > 0) {
                 }
             }
             // Buscar local e remoto em paralelo
-            const [localFeatures, remoteFeatures] = await Promise.all([
-                fetchAndProcess(localUrl),
-                fetchAndProcess(remoteUrl)
-            ]);
-            const allFeatures = [...localFeatures, ...remoteFeatures];
-            if (allFeatures.length > 0) {
-                const layer = L.geoJSON({ type: 'FeatureCollection', features: allFeatures }, {
-                    style: { color: '#008000', weight: 1, fillOpacity: 0.8 },
-                    onEachFeature: (feature, layer) => {
-                        layer.bindPopup(`<b>Floresta Pública</b><br>${feature.properties.nome || 'Nome não disponível'}`);
-                    }
-                });
+                    const [localFeatures, remoteFeatures] = await Promise.all([
+            fetchAndProcess(localUrl),
+            fetchAndProcess(remoteUrl)
+        ]);
+
+        // 2. Une os resultados
+        const allFeatures = [...localFeatures, ...remoteFeatures];
+
+        // 3. REGRA DE OURO: Se trouxe qualquer dado, o erro é FALSO
+        if (allFeatures.length > 0) {
+            window.publicForestsQueryError = false; 
+            
+            const layer = L.geoJSON({ type: 'FeatureCollection', features: allFeatures }, {
+                style: { color: '#008000', weight: 1, fillOpacity: 0.8 },
+                onEachFeature: (feature, layer) => {
+                    layer.bindPopup(`<b>Floresta Pública</b><br>${feature.properties.nome || 'Nome não disponível'}`);
+                }
+            });
                 publicForestLayers.push(layer);
                 console.log(`[DEBUG][FP][LOAD] Camada adicionada a publicForestLayers. Total agora: ${publicForestLayers.length}`);
                 layer.addTo(map);
