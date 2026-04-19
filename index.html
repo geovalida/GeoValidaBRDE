@@ -1869,7 +1869,7 @@ function extractCarCodeFromFilename(filename) {
 // Adicionar ao mapa com botão de remover no popup
 // Adicionar ao mapa
         const layer = L.geoJSON(carFeature, {
-            style: { color: '#ffd700', weight: 2, fillOpacity: 0.35 },
+            style: { color: '#ffd700', weight: 1, fillOpacity: 0.5, opacity: 0.3 },
             onEachFeature: (feature, layer) => {
                 const content = `
                     <div class="p-2" style="min-width:160px">
@@ -1882,7 +1882,7 @@ function extractCarCodeFromFilename(filename) {
                     </div>`;
                 layer.bindPopup(content);
             }
-        }).addTo(map);
+        });
         return { layer, feature: carFeature, properties: carFeature.properties };
     }
 // Busca Alertas MapBiomas por Bounding Box via GraphQL
@@ -3032,13 +3032,18 @@ function addLayerControl() {
     if (layerControl) {
         map.removeControl(layerControl);
     }
-
+    if (carFeatureGroup) carFeatureGroup.clearLayers();
     const layerIcons = {
         'CARs por Código': '#ffd700',
         'Florestas Públicas': '#008000',
         'Unidades de Conservação': '#0000ff',
         'MapBiomas Alertas': '#8B0000'
     };
+    // Remover CARs individuais do mapa antes de agrupá-los ---Isso evita o "fantasma" que não some
+
+    [...carCodeLayers, ...carLayers].forEach(l => {
+        if (map.hasLayer(l)) map.removeLayer(l);
+    });
 
     const overlays = {};
     
@@ -3059,8 +3064,23 @@ function addLayerControl() {
     if (mapBiomasLayers.length > 0) overlays[`<span class='legend-color' style='background:${layerIcons['MapBiomas Alertas']}'></span> MapBiomas Alertas`] = L.layerGroup(mapBiomasLayers);
     if (ibamaLayers.length > 0) overlays["<span class='legend-color' style='background:#ff6600; border: 2px dashed #ff6600;'></span> Embargos IBAMA"] = L.layerGroup(ibamaLayers);
 
+    const totalCars = [...carCodeLayers, ...carLayers];
+    if (totalCars.length > 0) {
+        overlays[`<span class='legend-color' style='background:${layerIcons['CARs por Código']}'></span> CAR(s) por Código`] = L.layerGroup(totalCars);
+    }
     // Adiciona ao mapa
-    Object.values(overlays).forEach(group => group.addTo(map));
+    // Só adicionar ao mapa o que já estava marcado ou o que for novo ---
+    // Removemos o Object.values(overlays).forEach(group => group.addTo(map));
+    // Em vez disso, verificamos o estado dos checkboxes existentes:
+    Object.entries(overlays).forEach(([name, group]) => {
+        const cleanName = name.replace(/<[^>]*>/g, "").trim();
+        const checkbox = document.querySelector(`input[data-layer-name="${cleanName}"]`);
+        
+        // Se não existe o checkbox ainda (primeira carga) ou se ele está marcado, adiciona ao mapa
+        if (!checkbox || checkbox.checked) {
+            group.addTo(map);
+        }
+    });
 
     // Ordenação Z-Index
     if (leafletGlebaLayers && leafletGlebaLayers.length > 0) {
@@ -9274,7 +9294,7 @@ document.getElementById('apply-correction-btn').addEventListener('click', async 
             };
             
             const newLayer = L.geoJSON(geojson, { 
-                style:{ color:'#b8860b', fillColor:'#ffd700', fillOpacity:0.35, weight:2, smoothFactor: 1.0 }
+                style:{ color:'#b8860b', fillColor:'#ffd700', fillOpacity:0.05, opacity: 0.5, weight:1, smoothFactor: 1.0 }
             });
 
             if (newLayer.getLayers().length === 0) {
@@ -9297,11 +9317,7 @@ document.getElementById('apply-correction-btn').addEventListener('click', async 
                 }
             }
 
-            // Garante que o carFeatureGroup existe antes de usar
-            if (typeof carFeatureGroup !== 'undefined') {
-                carFeatureGroup.addLayer(newLayer);
-            }
-            
+
             carLayers.push(newLayer); 
             carFileNames.push(f.name);
             if (typeof carFeatureGroup !== 'undefined') carFeatureGroup.bringToBack();
