@@ -2173,9 +2173,7 @@ if (ibamaResult&& ibamaResult.length > 0) {
                                 }
                             } catch (err) {
                                 console.warn('[PRODES][FALLBACK] Erro rede:', err);
-                                if (prodesLayers.length === 0) {
-                                    window.prodesQueryError = true;
-                                }   
+   			        window.prodesQueryError = true; 
                             }
                         }
                         if (!feature.properties) feature.properties = {};
@@ -4291,88 +4289,99 @@ async function exportReportPDF() {
         };
 
         // Função de Bloco Colorido Dinâmico (Listas Verticais para UC, FP, etc)
-        const drawDynamicBox = (title, items, emptyMsg, colors) => {
-            if (!items || items.length === 0) {
-                checkPageBreak(15);
-                doc.setFillColor(249, 250, 251); doc.setDrawColor(229, 231, 235);
-                doc.rect(margin, currentY, pageWidth - (margin * 2), 14, 'FD');
-                
-                doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(75, 85, 99);
-                doc.text(title.toUpperCase(), margin + 3, currentY + 6);
-                
-                doc.setFontSize(9); doc.setFont("helvetica", "normal"); doc.setTextColor(107, 114, 128);
-                doc.text(emptyMsg, margin + 3, currentY + 11);
-                currentY += 18;
-                return;
+// Função de Bloco Colorido Dinâmico (Listas Verticais para UC, FP, etc)
+const drawDynamicBox = (title, items, emptyMsg, colors) => {
+    // Se não houver itens, usa a paleta enviada (que será a verde conforme lógica abaixo)
+    if (!items || items.length === 0) {
+        checkPageBreak(15);
+        doc.setFillColor(...colors.bg); doc.setDrawColor(...colors.border);
+        doc.rect(margin, currentY, pageWidth - (margin * 2), 14, 'FD');
+        doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(0, 0, 0);
+        doc.text(title.toUpperCase(), margin + 3, currentY + 6);
+        doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(50, 50, 50);
+        doc.text(emptyMsg, margin + 3, currentY + 11);
+        currentY += 18;
+        return;
+    }
+
+    checkPageBreak(10);
+    doc.setFillColor(...colors.bg); doc.setDrawColor(...colors.border);
+    doc.rect(margin, currentY, pageWidth - (margin * 2), 8, 'F');
+    doc.line(margin, currentY, pageWidth - margin, currentY);
+    doc.line(margin, currentY, margin, currentY + 8);
+    doc.line(pageWidth - margin, currentY, pageWidth - margin, currentY + 8);
+    
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(0, 0, 0);
+    doc.text(title.toUpperCase(), margin + 3, currentY + 5);
+    currentY += 8;
+
+    items.forEach((item, idx) => {
+        if (idx > 0) {
+            doc.setFillColor(...colors.bg); doc.rect(margin, currentY, pageWidth - (margin * 2), 4, 'F');
+            doc.line(margin, currentY, margin, currentY + 4); doc.line(pageWidth - margin, currentY, pageWidth - margin, currentY + 4);
+            doc.setDrawColor(...colors.border);
+            doc.line(margin + 2, currentY + 2, pageWidth - margin - 2, currentY + 2);
+            currentY += 4;
+        }
+
+        item.forEach(line => {
+            doc.setFont("helvetica", "bold"); doc.setFontSize(9); // RESET DE FONTE AQUI
+            const labelWidth = doc.getTextWidth(line.l) + 1;
+            const splitVal = doc.splitTextToSize(String(line.v), pageWidth - margin*2 - 6 - labelWidth);
+            const lineH = splitVal.length * 5;
+
+            if (checkPageBreak(lineH + 2)) {
+                doc.setFillColor(...colors.bg); doc.setDrawColor(...colors.border);
+                doc.rect(margin, currentY, pageWidth - (margin * 2), 2, 'F');
+                doc.line(margin, currentY, pageWidth - margin, currentY);
+                doc.line(margin, currentY, margin, currentY + 2);
+                doc.line(pageWidth - margin, currentY, pageWidth - margin, currentY + 2);
+                currentY += 2;
+                doc.setFont("helvetica", "bold"); doc.setFontSize(9); // RE-APLICA APÓS QUEBRA
             }
 
-            checkPageBreak(10);
-            // Desenha Header do Bloco
             doc.setFillColor(...colors.bg); doc.setDrawColor(...colors.border);
-            doc.rect(margin, currentY, pageWidth - (margin * 2), 8, 'F');
-            doc.line(margin, currentY, pageWidth - margin, currentY);
-            doc.line(margin, currentY, margin, currentY + 8);
-            doc.line(pageWidth - margin, currentY, pageWidth - margin, currentY + 8);
-            
-            doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(...colors.title);
-            doc.text(title.toUpperCase(), margin + 3, currentY + 5);
-            currentY += 8;
+            doc.rect(margin, currentY, pageWidth - (margin * 2), lineH, 'F');
+            doc.line(margin, currentY, margin, currentY + lineH);
+            doc.line(pageWidth - margin, currentY, pageWidth - margin, currentY + lineH);
 
-            items.forEach((item, idx) => {
-                if (idx > 0) {
-                    doc.setFillColor(...colors.bg); doc.rect(margin, currentY, pageWidth - (margin * 2), 4, 'F');
-                    doc.line(margin, currentY, margin, currentY + 4); doc.line(pageWidth - margin, currentY, pageWidth - margin, currentY + 4);
-                    doc.setDrawColor(...colors.border);
-                    doc.line(margin + 2, currentY + 2, pageWidth - margin - 2, currentY + 2);
-                    currentY += 4;
-                }
+            doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
+            doc.text(line.l, margin + 3, currentY + 4);
 
-                item.forEach(line => {
-                    doc.setFontSize(9); doc.setFont("helvetica", "bold");
-                    const labelWidth = doc.getTextWidth(line.l) + 1;
-                    const splitVal = doc.splitTextToSize(String(line.v), pageWidth - margin*2 - 6 - labelWidth);
-                    const lineH = splitVal.length * 5;
+             doc.setFont("helvetica", "normal"); 
 
-                    if (checkPageBreak(lineH + 2)) {
-                        doc.setFillColor(...colors.bg); doc.setDrawColor(...colors.border);
-                        doc.rect(margin, currentY, pageWidth - (margin * 2), 2, 'F');
-                        doc.line(margin, currentY, pageWidth - margin, currentY);
-                        doc.line(margin, currentY, margin, currentY + 2);
-                        doc.line(pageWidth - margin, currentY, pageWidth - margin, currentY + 2);
-                        currentY += 2;
-                    }
+// Define a cor ANTES de escrever o texto
+             if (line.url) {
+                 doc.setTextColor(0, 0, 255); // Azul
+             } else {
+                 doc.setTextColor(0, 0, 0);   // Preto
+             }
 
-                    doc.setFillColor(...colors.bg); doc.setDrawColor(...colors.border);
-                    doc.rect(margin, currentY, pageWidth - (margin * 2), lineH, 'F');
-                    doc.line(margin, currentY, margin, currentY + lineH);
-                    doc.line(pageWidth - margin, currentY, pageWidth - margin, currentY + lineH);
+             doc.text(splitVal, margin + 3 + labelWidth, currentY + 4);
 
-                    doc.setFont("helvetica", "bold"); doc.setTextColor(...colors.title);
-                    doc.text(line.l, margin + 3, currentY + 4);
-                    
-                    doc.setFont("helvetica", "normal"); doc.setTextColor(...colors.text);
-                    doc.text(splitVal, margin + 3 + labelWidth, currentY + 4);
-                    if (line.url) { 
-    // Cria a área clicável sobre o texto "Acessar Laudo Oficial"
-                        doc.link(margin + 3 + labelWidth, currentY, doc.getTextWidth(line.v), 5, { url: line.url });
-                        doc.setTextColor(0, 0, 255); // Opcional: Deixa o texto do link azul
-                    } else {
-                        doc.setTextColor(...colors.text); // Volta para a cor padrão se não for link
-                    }
-                    currentY += lineH;
-                });
-            });
-            
-            // Fundo do Bloco
-            doc.setFillColor(...colors.bg); doc.setDrawColor(...colors.border);
-            doc.rect(margin, currentY, pageWidth - (margin * 2), 2, 'F');
-            doc.line(margin, currentY, margin, currentY + 2);
-            doc.line(pageWidth - margin, currentY, pageWidth - margin, currentY + 2);
-            currentY += 2;
-            doc.line(margin, currentY, pageWidth - margin, currentY); 
-            currentY += 6;
-        };
-
+             if (line.url) { 
+                 const linkWidth = doc.getTextWidth(line.v);
+                 doc.link(margin + 3 + labelWidth, currentY, linkWidth, 5, { url: line.url });
+    
+    // Adiciona o sublinhado azul para parecer um link
+                 doc.setDrawColor(0, 0, 255);
+                 doc.line(margin + 3 + labelWidth, currentY + 4.5, margin + 3 + labelWidth + linkWidth, currentY + 4.5);
+    
+    // Reseta a cor preto para a próxima linha não sair azul
+               doc.setTextColor(0, 0, 0);
+             }
+            currentY += lineH;
+        });
+    });
+    
+    doc.setFillColor(...colors.bg); doc.setDrawColor(...colors.border);
+    doc.rect(margin, currentY, pageWidth - (margin * 2), 2, 'F');
+    doc.line(margin, currentY, margin, currentY + 2);
+    doc.line(pageWidth - margin, currentY, pageWidth - margin, currentY + 2);
+    currentY += 2;
+    doc.line(margin, currentY, pageWidth - margin, currentY); 
+    currentY += 6;
+};
 
 
         // LOOP DOS CARS
@@ -4540,17 +4549,12 @@ async function exportReportPDF() {
 }
 
         // CORES ESTABELECIDAS PELO USUÁRIO
-            const pdfColorRed    = { bg: [254, 242, 242], border: [254, 202, 202], title: [153, 27, 27], text: [153, 27, 27] };
-            const pdfColorOrange = { bg: [255, 247, 237], border: [254, 235, 200], title: [194, 65, 12], text: [194, 65, 12] };
-            const pdfColorGreen  = { bg: [240, 253, 244], border: [187, 247, 208], title: [22, 101, 52], text: [22, 101, 52] };
-            const pdfColorGray   = { bg: [249, 250, 251], border: [229, 231, 235], title: [107, 114, 128], text: [107, 114, 128] };
-            const colorBlack = { 
-  bg: [249, 250, 251],     // quase branco (cinza bem claro)
-  border: [209, 213, 219], // cinza claro
-  title: [17, 24, 39],     // quase preto (bem forte)
-  text: [55, 65, 81]       // cinza escuro (mais suave que o título)
-};
-
+  
+const pdfColorRed    = { bg: [254, 242, 242], border: [254, 202, 202], title: [0, 0, 0], text: [0, 0, 0] };
+const pdfColorOrange = { bg: [255, 247, 237], border: [254, 235, 200], title: [0, 0, 0], text: [0, 0, 0] };
+const pdfColorGreen  = { bg: [240, 253, 244], border: [187, 247, 208], title: [0, 0, 0], text: [0, 0, 0] };
+const pdfColorGray   = { bg: [249, 250, 251], border: [229, 231, 235], title: [0, 0, 0], text: [0, 0, 0] };
+const pdfColorPurple = { bg: [243, 232, 255], border: [233, 213, 255], title: [0, 0, 0], text: [0, 0, 0] };
             // Bloco UC
             let ucStyle = pdfColorGreen; 
             if (car.ucQueryError) ucStyle = pdfColorGray;
@@ -4573,7 +4577,7 @@ async function exportReportPDF() {
             if (i === 0) {
                 let ibamaStyle = pdfColorGreen;
                 if (car.ibamaQueryError) ibamaStyle = pdfColorGray;
-                else if (car.ibamaEmbargos && car.ibamaEmbargos.length > 0) ibamaStyle = pdfColorOrange;
+                else if (car.ibamaEmbargos && car.ibamaEmbargos.length > 0) ibamaStyle = pdfColorPurple;
                 drawDynamicBox("Embargos IBAMA Intersectados", ibamaItems, "Nenhum embargo IBAMA identificado.", ibamaStyle);
             }
          }
@@ -4768,7 +4772,7 @@ const drawTimelineSection = (title, eventsArray) => {
             doc.setFontSize(8);
             doc.setTextColor(150);
             doc.setFont("helvetica", "normal");
-            doc.text(`Página ${j} de ${totalPages} - Sistema Validador CAR`, pageWidth / 2, pageHeight - 8, { align: "center" });
+            doc.text(`Página ${j} de ${totalPages} - GeoValida BRDE`, pageWidth / 2, pageHeight - 8, { align: "center" });
         }
 // Green footer only on the last page
         const pageCount = doc.getNumberOfPages();
