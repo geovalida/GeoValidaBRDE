@@ -906,7 +906,7 @@ async function fetchProdesPolygonalByBbox(bboxParam) {
 
       <!-- Linha 3: Input Manual -->
       <div>
-        <label class="font-bold block mb-2 text-slate-800">Ou digite os pontos manualmente (Em formato decimal ou GSM) e clique no botão "Carregar Glebas":</label>
+        <label class="font-bold block mb-2 text-slate-800">Ou digite os pontos manualmente (Em formato decimal ou GSM) e clique no botão "Mostrar Glebas":</label>
           <textarea id="manual-input" placeholder="Digite ou cole aqui #Gleba #Ponto #Latitude #Longitude #Altitude.
 Exemplos:
 1 1 -25.730022 -49.270000 0 (Decimal)
@@ -1651,7 +1651,7 @@ function resetGlebas() {
             alert('Erro ao buscar CARs. Verifique os códigos e tente novamente.');
         } finally {
             document.getElementById('search-car-btn').disabled = false;
-            document.getElementById('search-car-btn').innerHTML = '<i class="ph-map-trifold"></i> Carregar CARs';
+            document.getElementById('search-car-btn').innerHTML = '<i class="ph-map-trifold"></i> Carregar CAR(s)';
         }
     }
 function extractCarCodeFromFilename(filename) {
@@ -2737,7 +2737,7 @@ function showEnvironmentalModal() {
             <!-- 1. CARDS DE RESUMO -->
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div class="bg-blue-50 p-4 rounded-lg border border-blue-100">
-                    <div class="text-blue-600 text-xs font-bold uppercase tracking-wider">Área Total CARs</div>
+                    <div class="text-blue-600 text-xs font-bold uppercase tracking-wider">Área Total CAR(s)</div>
                     <div class="text-2xl font-black text-blue-900">${metrics.totalCarArea.toFixed(2)} <span class="text-sm font-normal">ha</span></div>
                 </div>
                 <div class="${metrics.totalDeforestationArea > 0 ? 'bg-red-50 border-red-100' : (isGloballyConsulted ? 'bg-green-50 border-green-100' : 'bg-gray-100 border-gray-300')} p-4 rounded-lg border">
@@ -2784,7 +2784,7 @@ function showEnvironmentalModal() {
                             <div class="flex items-center gap-2 font-bold mb-1">
                                 <i class="ph-check-circle-fill text-xl"></i> Conformidade Ambiental
                             </div>
-                            Não foram identificados polígonos de desmatamento PRODES entre 2019 e 2025 dentro dos CARs analisados. Situação indicativa de conformidade.
+                            Não foram identificados polígonos de desmatamento PRODES entre 2019 e 2025 dentro do(s) CAR(s) analisado(s). Situação indicativa de conformidade.
                         </div>
                     `;
                 }
@@ -3034,7 +3034,7 @@ function addLayerControl() {
     }
 
     const layerIcons = {
-        'CAR por Código': '#ffd700',
+        'CARs por Código': '#ffd700',
         'Florestas Públicas': '#008000',
         'Unidades de Conservação': '#0000ff',
         'MapBiomas Alertas': '#8B0000'
@@ -3053,7 +3053,7 @@ function addLayerControl() {
     }
     
     // Outras camadas gerais (EXCETO Glebas, que faremos customizado)
-    if (carCodeLayers.length > 0) overlays[`<span class='legend-color' style='background:${layerIcons['CARs por Código']}'></span> CARs por Código`] = L.layerGroup(carCodeLayers);
+    if (carCodeLayers.length > 0) overlays[`<span class='legend-color' style='background:${layerIcons['CARs por Código']}'></span> CAR(s) por Código`] = L.layerGroup(carCodeLayers);
     if (publicForestLayers.length > 0) overlays[`<span class='legend-color' style='background:${layerIcons['Florestas Públicas']}'></span> Florestas Públicas`] = L.layerGroup(publicForestLayers);
     if (ucLayers.length > 0) overlays[`<span class='legend-color' style='background:${layerIcons['Unidades de Conservação']}'></span> Unidades de Conservação`] = L.layerGroup(ucLayers);
     if (mapBiomasLayers.length > 0) overlays[`<span class='legend-color' style='background:${layerIcons['MapBiomas Alertas']}'></span> MapBiomas Alertas`] = L.layerGroup(mapBiomasLayers);
@@ -3744,7 +3744,7 @@ function populateEnvironmentalTab() {
                 </div>
                 <h4 class="text-lg font-bold text-gray-800 mb-2">Nenhum CAR carregado para análise</h4>
                 <p class="text-gray-600 max-w-md mx-auto mb-6">
-                    Para gerar o relatório ambiental, você precisa informar um código de CAR, fazer upload de um arquivo ou clicar em <strong>"Sim, analisar"</strong> nos CARs detectados automaticamente no mapa.
+                    Para gerar o relatório ambiental, você precisa informar um código de CAR, fazer upload de um arquivo ou clicar em <strong>"Sim, analisar"</strong> no(s) CAR(s) detectado(s) automaticamente no mapa.
                 </p>
                 <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-blue-800 text-left inline-block">
                     <strong>Dica:</strong> Se você já carregou as glebas, verifique se existem contornos <span class="text-amber-600 font-bold">pontilhados em amarelo</span> no mapa e clique neles para iniciar a validação automática.
@@ -3771,7 +3771,7 @@ function populateEnvironmentalTab() {
         <!-- Cards de Resumo -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div class="bg-blue-50 p-4 rounded-lg border border-blue-100">
-                <div class="text-blue-600 text-xs font-bold uppercase tracking-wider">Área Total CARs</div>
+                <div class="text-blue-600 text-xs font-bold uppercase tracking-wider">Área Total CAR(s)</div>
                 <div class="text-2xl font-black text-blue-900">${metrics.totalCarArea.toFixed(2)} <span class="text-sm font-normal">ha</span></div>
             </div>
             <div class="${metrics.totalDeforestationArea > 0 ? 'bg-red-50 border-red-100' : (isGloballyConsulted ? 'bg-green-50 border-green-100' : 'bg-gray-100 border-gray-300')} p-4 rounded-lg border">
@@ -4013,7 +4013,7 @@ function populateReportModal() {
             </div>
             <div class="summary-card lg:col-span-3">
                 <p class="text-[10px] uppercase font-bold text-gray-500">Arquivos e Sessão</p>
-                <p class="text-xs mt-1 text-gray-800"><strong>CARs:</strong> ${relatorio.meta.arquivos.car.join(', ') || 'Nenhum'}</p>
+                <p class="text-xs mt-1 text-gray-800"><strong>CAR(s):</strong> ${relatorio.meta.arquivos.car.join(', ') || 'Nenhum'}</p>
                 <p class="text-xs text-gray-800"><strong>Glebas:</strong> ${Array.isArray(relatorio.meta.arquivos.glebas) ? relatorio.meta.arquivos.glebas.join(', ') : (relatorio.meta.arquivos.glebas || 'Entrada Manual')}</p>
                 <p class="text-[9px] text-gray-400 mt-2">ID: ${relatorio.meta.sessaoId}</p>
             </div>
@@ -5621,7 +5621,7 @@ async function removeSingleCar(carCode) {
     } else {
         // Se cair aqui, o sistema limpa o mapa por precaução mas avisa o usuário
         console.warn("CAR não achado no índice. Executando limpeza de emergência...");
-        alert("O imóvel foi removido visualmente. Caso o erro persista, utilize o botão 'Limpar CAR(s)'.");
+        alert("O imóvel foi removido visualmente. Caso o erro persista, utilize o botão 'Limpar CARs'.");
     }
 }
 window.removeSingleCar = removeSingleCar;
@@ -8795,10 +8795,10 @@ if (data.length > 0) {
               allCarLayers.forEach(carL => { allCarFeatures.push(...extractPolygonFeatures(carL)); });
               
               if (allCarFeatures.length === 0) {
-                  const msg = `AVISO: CARs carregados, mas não contêm polígonos válidos para validação.`;
+                  const msg = `AVISO: CAR(s) carregado(s), mas não contêm polígonos válidos para validação.`;
                   errors.push(msg);
                   initialErrorListForVisualDisplay.push(msg);
-                  const logEntry = { entidade: 'CAR', tipo_evento: 'aviso_validacao', severidade: 'warning', codigo: 'CAR_NO_GEOM_WARN', mensagem: 'CARs carregados, mas não contêm polígonos válidos para validação.' };
+                  const logEntry = { entidade: 'CAR', tipo_evento: 'aviso_validacao', severidade: 'warning', codigo: 'CAR_NO_GEOM_WARN', mensagem: 'CAR(s) carregado(s), mas não contêm polígonos válidos para validação.' };
                   relatorio.eventos.push(logEntry);
                   if (isInitialValidation) initialErrors.push(logEntry);
               } else {
