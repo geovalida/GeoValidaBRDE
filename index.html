@@ -868,11 +868,11 @@ async function fetchProdesPolygonalByBbox(bboxParam) {
 
           <!-- LISTA E BOTÃO MOVIDOS PARA CÁ (Para reduzir o espaço) -->
           <button id="clear-car-btn" class="w-full md:w-48 btn-clear justify-start mt-2" style="display:none">
-               <i class="ph-trash"></i> Limpar CARs
+               <i class="ph-trash"></i> Limpar CAR(s)
           </button>
           <div id="car-list-container" class="mt-4 p-3 border border-gray-100 rounded-lg bg-gray-50 hidden">
                   <h4 class="font-semibold mb-2 text-slate-800 flex items-center">
-                          <i class="ph-list-checks text-xl mr-2 text-green-600"></i> CARs Carregados:
+                          <i class="ph-list-checks text-xl mr-2 text-green-600"></i> CAR(s) Carregados:
                   </h4>
                   <ul id="loaded-car-list" class="list-none ml-0 space-y-1 text-sm text-gray-600">
                           <li>Nenhum CAR carregado.</li>
@@ -906,7 +906,7 @@ async function fetchProdesPolygonalByBbox(bboxParam) {
 
       <!-- Linha 3: Input Manual -->
       <div>
-        <label class="font-bold block mb-2 text-slate-800">Ou digite os pontos manualmente (Em formato decimal ou GSM) e clique no botão "Mostrar Glebas":</label>
+        <label class="font-bold block mb-2 text-slate-800">Ou digite os pontos manualmente (Em formato decimal ou GSM) e clique no botão "Carregar Glebas":</label>
           <textarea id="manual-input" placeholder="Digite ou cole aqui #Gleba #Ponto #Latitude #Longitude #Altitude.
 Exemplos:
 1 1 -25.730022 -49.270000 0 (Decimal)
@@ -1635,7 +1635,7 @@ function resetGlebas() {
                 // Liberação imediata da interface
                 document.getElementById('car-code-input').value = '';
                 document.getElementById('search-car-btn').disabled = false;
-                document.getElementById('search-car-btn').innerHTML = '<i class="ph-map-trifold"></i> Carregar CARs';
+                document.getElementById('search-car-btn').innerHTML = '<i class="ph-map-trifold"></i> Carregar CAR(s)';
                 document.getElementById('top-message-container').innerHTML =
                     `<div class="success-message"><i class="ph-check-circle-fill"></i> CAR carregado com sucesso, realizando análise ambiental...</div>`;
                 document.getElementById('btnRelatorio').disabled = true;
@@ -3034,7 +3034,7 @@ function addLayerControl() {
     }
 
     const layerIcons = {
-        'CARs por Código': '#ffd700',
+        'CAR(s) por Código': '#ffd700',
         'Florestas Públicas': '#008000',
         'Unidades de Conservação': '#0000ff',
         'MapBiomas Alertas': '#8B0000'
@@ -5621,7 +5621,7 @@ async function removeSingleCar(carCode) {
     } else {
         // Se cair aqui, o sistema limpa o mapa por precaução mas avisa o usuário
         console.warn("CAR não achado no índice. Executando limpeza de emergência...");
-        alert("O imóvel foi removido visualmente. Caso o erro persista, utilize o botão 'Limpar CARs'.");
+        alert("O imóvel foi removido visualmente. Caso o erro persista, utilize o botão 'Limpar CAR(s)'.");
     }
 }
 window.removeSingleCar = removeSingleCar;
