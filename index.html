@@ -4916,6 +4916,7 @@ const drawTimelineSection = (title, eventsArray) => {
         map.addControl(drawControl);
 
         // Durante edição/remoção, esconda tooltips e avisos para facilitar correções
+
         map.on('draw:editstart', () => { 
             editingModeActive = true; 
             document.getElementById('map').classList.add('editing-hide-tooltips');
@@ -4930,6 +4931,14 @@ const drawTimelineSection = (title, eventsArray) => {
             clearWarnings();
             clearExtravasamentoLayers(); 
         });
+        map.on('draw:drawstart', () => { 
+            editingModeActive = true; 
+            });
+        map.on('draw:drawstop', () => { 
+                editingModeActive = false; 
+    // Só agora, com o desenho finalizado, executamos a validação
+                setTimeout(() => { validateAll(); updatePoints(); updateLegend(); updateStatusPanel(); }, 200);
+            });
         map.on('draw:editstop', () => { 
             editingModeActive = false; 
             document.getElementById('map').classList.remove('editing-hide-tooltips');
@@ -5331,11 +5340,17 @@ const drawTimelineSection = (title, eventsArray) => {
             updateClearButtonsVisibility();
         });
         
-        map.on('mouseup', () => setTimeout(()=>{ validateAll(); updatePoints(); updateLegend(); updateStatusPanel(); },200));
+        map.on('mouseup', () => {
+    // Se o modo de edição ou desenho estiver ativo, SAIA da função e não valide nada
+            if (editingModeActive) return; 
 
-        if (glebaData.length > 0) {
-            drawGlebasFromData(glebaData);
-        }
+         setTimeout(() => { 
+        validateAll(); 
+        updatePoints(); 
+        updateLegend(); 
+        updateStatusPanel(); 
+    }, 200);
+});
         
         carLayers.forEach(l => carFeatureGroup.addLayer(l));
         
@@ -8869,9 +8884,9 @@ if (data.length > 0) {
                               }
                               const percentageStr = percentage.toFixed(2);
                               
-                              if (isInitialValidation && percentage > initialExtravasamentoPct) {
-                                  initialExtravasamentoPct = percentage;
-                              }
+                              if (percentage > 0.03 && !editingModeActive) {
+    				searchSicarByBbox(difference); 
+				}
                               
                               // Só considera “sem sobreposição” se realmente não houver interseção relevante
                               if ((!intersection || intersectionArea <= MIN_OVERLAP_TOLERANCE) && glebaArea > MIN_OVERLAP_TOLERANCE) {
