@@ -49,7 +49,7 @@ function drawCandidateCar(feature, carCode) {
                     <button onclick="confirmAndLoadCar('${carCode}')" class="bg-green-600 text-white text-xs px-2 py-1 rounded hover:bg-green-700 w-full mb-2">
                         <i class="ph-check"></i> Sim, analisar
                     </button>
-                    <button onclick="discardCandidateCar('${carCode}')" class="bg-gray-500 text-white text-xs px-2 py-1 rounded hover:bg-gray-600 w-full">
+                    <button onclick="discardCandidateCar('${carCode}')" class="btn-secondary-gray text-white text-xs px-2 py-1 rounded w-full">
                         <i class="ph-trash"></i> Descartar
                     </button>
                 </div>
@@ -58,7 +58,9 @@ function drawCandidateCar(feature, carCode) {
         }
     }).addTo(map);
     candidateCarLayers.push({ carCode, layer });
+        validateAll(); // Força o botão de correção a ler que agora existe um candidato
 }
+
 
 // Função para remover o candidato do mapa sem carregar
 function discardCandidateCar(carCode) {
@@ -571,7 +573,18 @@ async function fetchProdesPolygonalByBbox(bboxParam) {
         background-color: #166534 !important; 
         transform: translateY(-1px);
     }
+.btn-secondary-gray, 
+#close-relatorio-footer-btn, 
+#cancel-correction-btn, 
+#close-modal,
+#close-relatorio-modal {
+    background-color: #4b5563 !important; /* Cinza do Excluir Ponto */
+    color: white !important;
+}
 
+.btn-secondary-gray:hover {
+    background-color: #374151 !important;
+}
     /* Botão Aplicar Correções (Laranja/Amber) */
     #show-correction-modal-btn {
         background-color: #ffb300 !important;
@@ -9012,6 +9025,7 @@ if (data.length > 0) {
       
     const correctionBtn = document.getElementById('show-correction-modal-btn');
     const seqAnalysis = analyzeGlebaSequence();
+    const hasCandidateCars = candidateCarLayers && candidateCarLayers.length > 0;
     const hasSequenceFix = (!seqAnalysis.hasDuplicate && (seqAnalysis.hasNonSequential || seqAnalysis.hasGaps) && glebaData.length > 1) || seqAnalysis.hasDuplicate;
     const hasCorrections = needsClosureCorrection || glebasToClip.length > 0 || glebasToSimplify.length > 0 || glebasToExclude.length > 0 || glebasToFixCrossings.length > 0 || hasSequenceFix;
       
