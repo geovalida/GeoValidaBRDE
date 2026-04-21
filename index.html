@@ -415,6 +415,8 @@ async function fetchProdesPolygonalByBbox(bboxParam) {
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+<script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+<script>eruda.init();</script>
   <meta charset="utf-8"/>
   <meta content="width=device-width, initial-scale=1" name="viewport"/>
   <link href="https://unpkg.com/leaflet/dist/leaflet.css" rel="stylesheet"/>
@@ -2415,6 +2417,7 @@ if (ibamaResult&& ibamaResult.length > 0) {
         // Limpar camadas anteriores
         publicForestLayers.forEach(layer => map.removeLayer(layer));
         publicForestLayers = [];
+	window.publicForestsQueryError = false;
         console.log('[DEBUG][FP][LOAD] Iniciando fetchPublicForests para bbox:', bbox);
 
         try {
@@ -2439,13 +2442,19 @@ if (ibamaResult&& ibamaResult.length > 0) {
                     const resp = await fetch(url);
                     if (!resp.ok) {
                         console.warn('[DEBUG][FP][LOAD] Falha ao buscar', url, resp.status);
-                        return [];
-                    }
+                        return{
+        success: false,
+        features: []
+    };
+}
                     const geojson = await resp.json();
                     if (!geojson.features || geojson.features.length === 0) {
                         console.warn('[DEBUG][FP][LOAD] Nenhuma feature no JSON de', url);
-                        return [];
-                    }
+                        return {
+        success: true, // importante: consulta funcionou
+        features: []
+    };
+}
                     console.log(`[DEBUG][FP][LOAD] ${url} carregou ${geojson.features.length} features`);
                     let bboxArr = bbox.replace(',EPSG:4326','').split(',').map(Number);
                     const bboxPoly = turf.bboxPolygon(bboxArr);
@@ -2468,45 +2477,63 @@ if (ibamaResult&& ibamaResult.length > 0) {
                         }
                     });
                     console.log(`[DEBUG][FP][LOAD] ${url} retornou ${featuresInBbox.length} features após filtro por bbox`);
-                    return featuresInBbox;
+                    return {
+    success: true,
+    features: featuresInBbox
+};
                 } catch (e) {
-                    console.warn('[DEBUG][FP][LOAD] Erro ao processar', url, e);
-                    window.publicForestsQueryError = true;
-                    return [];
-                }
+    console.warn('[DEBUG][FP][LOAD] Erro ao processar', url, e);
+    return {
+        success: false,
+        features: []
+    };
+}
             }
             // Buscar local e remoto em paralelo
-                    const [localFeatures, remoteFeatures] = await Promise.all([
-            fetchAndProcess(localUrl),
-            fetchAndProcess(remoteUrl)
-        ]);
+                    const [localResult, remoteResult] = await Promise.all([
+    fetchAndProcess(localUrl),
+    fetchAndProcess(remoteUrl)
+]);
 
-        // 2. Une os resultados
-        const allFeatures = [...localFeatures, ...remoteFeatures];
+const allFeatures = [
+    ...localResult.features,
+    ...remoteResult.features
+];
+// CAPTURA SE HOUVE ERRO
+const falhaTotal =
+    localResult.success === false &&
+    remoteResult.success === false;
 
-        // 3. REGRA DE OURO: Se trouxe qualquer dado, o erro é FALSO
-        if (allFeatures.length > 0) {
-            window.publicForestsQueryError = false; 
-            
-            const layer = L.geoJSON({ type: 'FeatureCollection', features: allFeatures }, {
-                style: { color: '#008000', weight: 1, fillOpacity: 0.8 },
-                onEachFeature: (feature, layer) => {
-                    layer.bindPopup(`<b>Floresta Pública</b><br>${feature.properties.nome || 'Nome não disponível'}`);
-                }
-            });
-                publicForestLayers.push(layer);
-                console.log(`[DEBUG][FP][LOAD] Camada adicionada a publicForestLayers. Total agora: ${publicForestLayers.length}`);
-                layer.addTo(map);
-                console.log(`Adicionado ${allFeatures.length} features Florestas Públicas (apenas filtro por bbox)`);
-            } else {
-                console.log('Nenhuma Floresta Pública encontrada no bbox do(s) CAR(s)');
-            }
-        } catch (error) {
-            console.warn('Erro ao buscar florestas públicas:', error);
-            window.publicForestsQueryError = true; // Ativa a flag de falha
+if (falhaTotal) {
+    window.publicForestsQueryError = true;
+    console.warn('Falha total na consulta de Florestas Públicas');
+    return;
+}
+
+if (allFeatures.length > 0) {
+    // tem interseção
+    window.publicForestsQueryError = false;
+
+    const layer = L.geoJSON({ type: 'FeatureCollection', features: allFeatures }, {
+        style: { color: '#008000', weight: 1, fillOpacity: 0.8 },
+        onEachFeature: (feature, layer) => {
+            layer.bindPopup(`<b>Floresta Pública</b><br>${feature.properties.nome || 'Nome não disponível'}`);
         }
-    }
+    });
 
+    publicForestLayers.push(layer);
+    layer.addTo(map);
+
+} else {
+    // consulta funcionou, mas não encontrou interseção
+    window.publicForestsQueryError = false;
+    console.log('Nenhuma Floresta Pública encontrada no bbox');
+}
+} catch (error) {
+    console.warn('Erro ao buscar florestas públicas:', error);
+    window.publicForestsQueryError = true;
+}
+}
     // Buscar Unidades de Conservação
     async function fetchConservationUnits(bbox) {
         // Limpar camadas anteriores
@@ -3337,14 +3364,18 @@ function addLayerControl() {
     function almostEqual(a,b){ return Math.abs(a-b)<=TOL; }
 
     function getGlebaColor(glebaIndex) {
-      if (!glebaIndex) return DEFAULT_COLOR;
-      // Se a gleba está sem sobreposição CAR (ORIGINAL), retorna vermelho como aviso
-      // USA a lista original para garantir que apareça em vermelho mesmo após correções
-      if (glebaSemCAROriginalmente.includes(glebaIndex)) {
-          return '#ff0000'; // Vermelho para glebas sem CAR
-      }
-      return COLORS[(glebaIndex - 1) % COLORS.length];
-    }
+    const g = glebaData.find(g => g.glebaIndex === glebaIndex);
+    if (!g) return DEFAULT_COLOR;
+
+    // 🔴 erro REAL atual
+    if (g.temErroAtivo === true) return '#ff0000';
+
+    // 🟠 aviso
+    if (g.temAvisoAtivo === true) return '#f59e0b';
+
+    // ✅ gleba válida
+    return COLORS[(glebaIndex - 1) % COLORS.length];
+}
     
     function getGlebaCultivoStatus(g) {
       if (!g || !g.points || g.points.length === 0) return '';
@@ -4203,9 +4234,33 @@ async function exportReportPDF() {
 
             if (typeof updateLegend === 'function') updateLegend();
         };
-
         ligarTodasAsCamadas();
         await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        // garantir que todos os CARs estejam no mapa
+        carCodeLayers.forEach(layer => {
+        if (!map.hasLayer(layer)) {
+            layer.addTo(map);
+        }
+        });
+
+// garante que o CAR fique abaixo das glebas
+        carCodeLayers.forEach(layer => {
+        if (layer.bringToBack) layer.bringToBack();
+        });
+        // PASSO 2: garantir que o mapa esteja focado no(s) CAR(s)
+        if (carCodeLayers.length > 0) {
+        const carGroup = L.featureGroup(
+            carCodeLayers.filter(layer => map.hasLayer(layer))
+        );
+
+        if (carGroup.getLayers().length > 0) {
+        map.fitBounds(carGroup.getBounds(), {
+        padding: [40, 40],
+        animate: false
+        });
+    }
+}
 
         exportBtn.innerHTML = '<i class="ph-spinner ph-spin"></i> Gerando Relatório...';
 
@@ -5673,46 +5728,7 @@ async function removeSingleCar(carCode) {
     }
 }
 window.removeSingleCar = removeSingleCar;
-  async function processMultipleCarFiles(files) {
-        document.getElementById('error-container').innerHTML = 
-            `<div class="error rounded-lg" style="background: #E0E7FF; color: #4F46E5; border-color: #A5B4FC;">Processando ${files.length} arquivo(s) CAR...</div>`;
-        
-        let processedCount = 0;
-
-        if (carLayers.length === 0) {
-            clearAllCarData(false); 
-            relatorio.meta.arquivos.car = []; 
-        }
-        
-        for (const file of files) {
-            if (!carFileNames.includes(file.name)) {
-                await processSingleCarFile(file);
-            }
-            processedCount++;
-            document.getElementById('error-container').innerHTML = 
-                `<div class="error rounded-lg" style="background: #E0E7FF; color: #4F46E5; border-color: #A5B4FC;">Processando... (${processedCount}/${files.length} concluídos)</div>`;
-        }
-        
-        relatorio.meta.arquivos.car = carFileNames; 
-        
-if (carFeatureGroup && carFeatureGroup.getLayers().length > 0) {
-            carFeatureGroup.bringToBack();
-            const envBtn = document.getElementById('btnRelatorio');
-            if (envBtn) envBtn.disabled = false;
-
-            document.getElementById('top-message-container').innerHTML =
-                `<div class="success-message"><i class="ph-check-circle-fill"></i> CAR(s) carregado(s), consultando base SICAR e análise ambiental...</div>`;
-            
-            // Dispara a consulta WFS automática para pegar Módulos Fiscais e Status
-            setTimeout(() => { triggerBackgroundEnvironmentalAnalysis(); }, 500);
-        }else {
-            document.getElementById('top-message-container').innerHTML = 
-                `<div class="error rounded-lg">AVISO: Nenhum CAR válido foi carregado.</div>`;
-        }
-        updateUnifiedCarListUI();
-        updateStatusPanel();
-        validateAll(true); 
-    }
+  
     /**
      * Limpeza das glebas e reset do histórico de relatórios.
      */
@@ -8903,7 +8919,7 @@ if (data.length > 0) {
                               
                               // Só considera “sem sobreposição” se realmente não houver interseção relevante
                               if ((!intersection || intersectionArea <= MIN_OVERLAP_TOLERANCE) && glebaArea > MIN_OVERLAP_TOLERANCE) {
-                                  const msg = `AVISO G${glebaIndex}: Gleba não tem sobreposição com o CAR (0%). Sugestão: Excluir a gleba ou analisar CAR sobreposto.`;
+                                  const msg = `AVISO G${glebaIndex}: Gleba não tem sobreposição com o CAR (0%). Sugestão: Excluir a gleba ou analisar CAR sobreposto nas áreas pontilhadas do mapa.`;
                                   errors.push(msg);
                                   initialErrorListForVisualDisplay.push(msg);
                                   
@@ -8924,7 +8940,7 @@ if (data.length > 0) {
                                       }
                                   }
 
-                                  const extravasamentoErrorMsg = `ERRO Gleba ${glebaIndex}: Gleba não está completamente contida na área do(s) CAR(s) (extravasa os limites em ${percentageStr}%).`;
+                                  const extravasamentoErrorMsg = `ERRO Gleba ${glebaIndex}: Gleba não está completamente contida na área do(s) CAR(s) (extravasa os limites em ${percentageStr}%). Realize a correção manual ou automática ou analise CAR sobreposto nas áreas pontilhadas do mapa.`;
                                   errors.push(extravasamentoErrorMsg);
                                   initialErrorListForVisualDisplay.push(extravasamentoErrorMsg);
 
@@ -9322,9 +9338,46 @@ document.getElementById('apply-correction-btn').addEventListener('click', async 
                 features: [gj.type === 'Feature' ? gj : { type: 'Feature', geometry: gj, properties: gj.properties || {} }] 
             };
             
-            const newLayer = L.geoJSON(geojson, { 
-                style:{ color:'#b8860b', fillColor:'#ffd700', fillOpacity:0.05, opacity: 0.5, weight:1, smoothFactor: 1.0 }
-            });
+            const newLayer = L.geoJSON(geojson, {
+    style:{ 
+        color:'#b8860b',
+        fillColor:'#ffd700',
+        fillOpacity:0.3,
+        opacity: 0.5,
+        weight:1,
+        smoothFactor: 1.0
+    },
+    onEachFeature: (feature, layer) => {
+
+        const carCodePopup =
+            normalizeCarCode(
+                feature.properties?.cod_imovel ||
+                feature.properties?.COD_IMOVEL ||
+                feature.properties?.num_certif ||
+                extractCarCodeFromFilename(f.name)
+            );
+
+        const content = `
+            <div class="p-2" style="min-width:160px">
+                <b class="text-blue-800">Imóvel CAR:</b><br>
+                <span class="text-[10px] font-mono">${carCodePopup}</span><br><br>
+                <button onclick="removeSingleCar('${carCodePopup}')"
+                        style="background-color:#dc2626 !important;
+                               color:white !important;
+                               padding:5px;
+                               width:100%;
+                               border-radius:4px;
+                               font-size:11px;
+                               cursor:pointer;
+                               border:none;">
+                    <i class="ph-trash"></i> Remover da Análise
+                </button>
+            </div>
+        `;
+
+        layer.bindPopup(content);
+    }
+});
 
             if (newLayer.getLayers().length === 0) {
                 errContainer.innerHTML = `<div class="error rounded-lg">AVISO: ${f.name} Sem polígonos válidos.</div>`;
@@ -9416,18 +9469,29 @@ document.getElementById('apply-correction-btn').addEventListener('click', async 
         
         relatorio.meta.arquivos.car = carFileNames; 
         
-        if (carFeatureGroup && carFeatureGroup.getLayers().length > 0) {
+        const hasAnyCar =
+        carFeatureGroup?.getLayers().length > 0 ||
+        carLayers.length > 0 ||
+        carCodeFeatures.length > 0;
+
+        if (hasAnyCar) {
             // Garante que o CAR fique sempre na camada de baixo
+            // Garante que o CAR fique sempre na camada de baixo
+        if (carFeatureGroup && carFeatureGroup.getLayers().length > 0) {
             carFeatureGroup.bringToBack();
-            const allBounds = carFeatureGroup.getBounds();
-            if(allBounds) {
-                map.fitBounds(allBounds, { padding: [20, 20] });
-                map.invalidateSize();
-            }
+            map.fitBounds(carFeatureGroup.getBounds(), { padding: [20, 20] });
+        } else if (carLayers.length > 0) {
+            const group = L.featureGroup(carLayers);
+            group.bringToBack();
+            map.fitBounds(group.getBounds(), { padding: [20, 20] });
+        }
+
+            map.invalidateSize();
+            
             // Liberação imediata da interface
             document.getElementById('car-input').value = '';
             document.getElementById('top-message-container').innerHTML =
-                `<div class="success-message"><i class="ph-check-circle-fill"></i> CAR carregado com sucesso, realizando análise ambiental...</div>`;
+                `<div class="success-message"><i class="ph-check-circle-fill"></i> CAR(s) carregado(s) com sucesso, realizando análise ambiental...</div>`;
             document.getElementById('btnRelatorio').disabled = true;
             // Disparar análise ambiental em segundo plano
             setTimeout(() => { triggerBackgroundEnvironmentalAnalysis(); }, 100);
