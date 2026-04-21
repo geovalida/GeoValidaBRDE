@@ -4219,12 +4219,14 @@ async function exportReportPDF() {
     try {
         const ligarTodasAsCamadas = () => {
             const checkboxes = document.querySelectorAll('#custom-layer-panel input[type="checkbox"]');
-            checkboxes.forEach(cb => {
-                if (!cb.checked) {
+            const anyUnchecked = Array.from(checkboxes).some(cb => !cb.checked);
+
+            if (anyUnchecked) {
+                checkboxes.forEach(cb => {
                     cb.checked = true;
                     cb.dispatchEvent(new Event('change'));
-                }
-            });
+                });
+            }
 
             if (customLayerPanel) customLayerPanel.style.display = 'block';
 
@@ -4234,33 +4236,9 @@ async function exportReportPDF() {
 
             if (typeof updateLegend === 'function') updateLegend();
         };
+
         ligarTodasAsCamadas();
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        
-        // garantir que todos os CARs estejam no mapa
-        carCodeLayers.forEach(layer => {
-        if (!map.hasLayer(layer)) {
-            layer.addTo(map);
-        }
-        });
-
-// garante que o CAR fique abaixo das glebas
-        carCodeLayers.forEach(layer => {
-        if (layer.bringToBack) layer.bringToBack();
-        });
-        // PASSO 2: garantir que o mapa esteja focado no(s) CAR(s)
-        if (carCodeLayers.length > 0) {
-        const carGroup = L.featureGroup(
-            carCodeLayers.filter(layer => map.hasLayer(layer))
-        );
-
-        if (carGroup.getLayers().length > 0) {
-        map.fitBounds(carGroup.getBounds(), {
-        padding: [40, 40],
-        animate: false
-        });
-    }
-}
+        await new Promise(resolve => setTimeout(resolve, 900));
 
         exportBtn.innerHTML = '<i class="ph-spinner ph-spin"></i> Gerando Relatório...';
 
@@ -4347,7 +4325,7 @@ async function exportReportPDF() {
         if (metrics.carMetrics.length === 0 && leafletGlebaLayers.length > 0) {
             const group = new L.FeatureGroup(leafletGlebaLayers);
             map.fitBounds(group.getBounds(), { padding: [40, 40], animate: false });
-            await new Promise(r => setTimeout(r, 1500));
+            await new Promise(r => setTimeout(r, 900));
             const mapImg = await captureMapImage();
             if (mapImg) {
                 const imgP = doc.getImageProperties(mapImg);
@@ -4488,7 +4466,7 @@ const drawDynamicBox = (title, items, emptyMsg, colors) => {
             let layerToFocus = carCodeLayers[i] || carLayers[i];
             if (layerToFocus) {
                 map.fitBounds(layerToFocus.getBounds(), { padding: [40, 40], animate: false });
-                await new Promise(r => setTimeout(r, 1500));
+                await new Promise(r => setTimeout(r, 900));
             }
 
             const mapImg = await captureMapImage();
