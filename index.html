@@ -8,7 +8,7 @@ async function searchSicarByBbox(glebaFeature) {
 
     // Calcula o BBOX da gleba
     const bbox = turf.bbox(glebaFeature);
-    const bboxParam = `${bbox[0]},${bbox[1]},${bbox[2]},${bbox[3]},EPSG:4326`;
+    const bboxParam = `${bbox[0]},${bbox[1]},${bbox[2]},${bbox[3]},EPSG:4326`;r
     
     console.log(`[SICAR] Buscando CARs automáticos no BBOX: ${bboxParam}`);
 
@@ -1386,6 +1386,34 @@ function resetGlebas() {
         'https://validadorbrde.powerappsportals.com/Validador/webfiles/prodes.json',
         './prodes.json'
     ];
+	    // Dados hardcoded para testes de sobreposição / PRODES (sempre em formato normalizado sem pontos)
+    const HARD_CODED_PRODES_DATA = {
+        'MS-5006903-20653795E9D942A39F0AC0227622148F': {
+            resultados: 'CERRADO',
+            dentro_tolerancia: 'VERDADEIRO',
+            tolerancia_aplicada: 'N/A',
+            bioma: 'CERRADO'
+        },
+        'SC-4219705-596DE308889B431BA4058040E2D21CA4': {
+            resultados: 'Supressão de vegetação em 2021.',
+            dentro_tolerancia: 'FALSO',
+            tolerancia_aplicada: 'MATA ATLÂNTICA',
+            bioma: 'MATA ATLÂNTICA'
+        },
+        'MS-003003-0C0C9A7D5A1234567890ABCDEF123456': {
+            resultados: 'CERRADO',
+            dentro_tolerancia: 'VERDADEIRO',
+            tolerancia_aplicada: 'N/A',
+            bioma: 'CERRADO'
+        }
+    }
+
+    const HARD_CODED_OVERLAP_CARS = [
+        'MS-5006903-20653795E9D942A39F0AC0227622148F',
+        'SC-4219705-596DE308889B431BA4058040E2D21CA4',
+        'MS-003003-0C0C9A7D5A1234567890ABCDEF123456'
+    ];
+
 
     let layerControl = null; // Controle de camadas
     
