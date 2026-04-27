@@ -46,12 +46,19 @@ function drawCandidateCar(feature, carCode) {
                 <div class="p-2 min-w-[150px]">
                     <b class="text-blue-800">CAR Localizado:</b><br>
                     <span class="text-xs font-mono">${carCode}</span><br><br>
-                    <button onclick="confirmAndLoadCar('${carCode}')" class="bg-green-600 text-white text-xs px-2 py-1 rounded hover:bg-green-700 w-full mb-2">
-                        <i class="ph-check"></i> Sim, analisar
-                    </button>
-                    <button onclick="discardCandidateCar('${carCode}')" class="btn-secondary-gray text-white text-xs px-2 py-1 rounded w-full">
-                        <i class="ph-trash"></i> Descartar
-                    </button>
+                    <button
+  class="btn-confirm-car bg-green-600 text-white text-xs px-2 py-1 rounded hover:bg-green-700 w-full mb-2"
+  data-car-code="${carCode}"
+>
+  <i class="ph-check"></i> Sim, analisar
+</button>
+                    <button
+  class="btn-discard-car btn-secondary-gray text-white text-xs px-2 py-1 rounded w-full"
+  data-car-code="${carCode}"
+>
+  <i class="ph-trash"></i> Descartar
+</button>
+
                 </div>
             `;
             l.bindPopup(popupContent);
@@ -72,7 +79,7 @@ function discardCandidateCar(carCode) {
 }
 
 // Função chamada pelo botão "Sim" no popup
-async function confirmAndLoadCar(carCode) {
+window.confirmAndLoadCar = async function (carCode) {
     // Carrega o CAR oficialmente
     const normalized = normalizeCarCode(carCode);
     // Remove o candidato do mapa
@@ -415,8 +422,6 @@ async function fetchProdesPolygonalByBbox(bboxParam) {
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<script src="https://cdn.jsdelivr.net/npm/eruda"></script>
-<script>eruda.init();</script>
   <meta charset="utf-8"/>
   <meta content="width=device-width, initial-scale=1" name="viewport"/>
   <link href="https://unpkg.com/leaflet/dist/leaflet.css" rel="stylesheet"/>
@@ -872,7 +877,7 @@ async function fetchProdesPolygonalByBbox(bboxParam) {
           <label class="font-bold block mb-0 text-slate-800 text-lg">1. Consultar CAR pelo código ou arquivo</label>
           <p class="text-xs text-gray-500 mb-3">Digite o código do CAR ou envie o(s) arquivo(s) em formato .kml ou .zip e clique em <strong>Carregar CAR(s)</strong>.</p>
           <div class="flex flex-col md:flex-row gap-4 items-stretch">
-            <input type="text" id="car-code-input" placeholder="Ex: MS-XXXX, MT-YYYY" class="flex-1 p-2.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 outline-none"/>
+            <input type="text" id="car-code-input" placeholder="Ex: MS-XXXX, MT-YYYY" class="flex-1 p-2.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 outline-none placeholder-muted"/>
             <input type="file" id="car-input" accept=".kml,.zip" multiple class="flex-1 p-1.5 border border-gray-300 rounded-md bg-white text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200 cursor-pointer"/>
             <button id="search-car-btn" class="md:w-auto px-8 bg-[#15803d] hover:bg-[#166534] text-white font-bold rounded-md transition-all">
               Carregar CAR(s)
@@ -957,9 +962,9 @@ class="p-2 border border-gray-300 rounded-md bg-white placeholder-muted"></texta
     <div class="flex flex-col md:flex-row justify-start space-y-2 md:space-y-0 md:space-x-4 mb-8">
       
       <!-- Checkbox "Mostrar Pontos" -->
-      <label class="font-bold flex items-center cursor-pointer">
-        <input id="show-points" type="checkbox" class="mr-2 h-5 w-5 text-green-600 border-gray-300 rounded focus:ring-green-500"/> 
-        Mostrar Pontos de Vértice
+      <label class="font-bold flex items-center cursor-pointer gap-2">
+        <input id="show-points" type="checkbox" class="h-5 w-5 text-green-600 border-gray-300 rounded focus:ring-green-500"/> 
+        Mostrar Pontos
       </label>
 
       <!-- Botões de Ação -->
@@ -1380,34 +1385,6 @@ function resetGlebas() {
     const MMA_DATA_URLS = [
         'https://validadorbrde.powerappsportals.com/Validador/webfiles/prodes.json',
         './prodes.json'
-    ];
-
-    // Dados hardcoded para testes de sobreposição / PRODES (sempre em formato normalizado sem pontos)
-    const HARD_CODED_PRODES_DATA = {
-        'MS-5006903-20653795E9D942A39F0AC0227622148F': {
-            resultados: 'CERRADO',
-            dentro_tolerancia: 'VERDADEIRO',
-            tolerancia_aplicada: 'N/A',
-            bioma: 'CERRADO'
-        },
-        'SC-4219705-596DE308889B431BA4058040E2D21CA4': {
-            resultados: 'Supressão de vegetação em 2021.',
-            dentro_tolerancia: 'FALSO',
-            tolerancia_aplicada: 'MATA ATLÂNTICA',
-            bioma: 'MATA ATLÂNTICA'
-        },
-        'MS-003003-0C0C9A7D5A1234567890ABCDEF123456': {
-            resultados: 'CERRADO',
-            dentro_tolerancia: 'VERDADEIRO',
-            tolerancia_aplicada: 'N/A',
-            bioma: 'CERRADO'
-        }
-    }
-
-    const HARD_CODED_OVERLAP_CARS = [
-        'MS-5006903-20653795E9D942A39F0AC0227622148F',
-        'SC-4219705-596DE308889B431BA4058040E2D21CA4',
-        'MS-003003-0C0C9A7D5A1234567890ABCDEF123456'
     ];
 
     let layerControl = null; // Controle de camadas
@@ -2302,7 +2279,7 @@ if (ibamaResult&& ibamaResult.length > 0) {
         const listEl = document.getElementById('loaded-car-list');
         if (!listEl || !containerEl) return;
 
-        const escHtml = (str) => String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        const escHtml = (str) => String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&amp;quot;');
         
         // Filtra os códigos para não mostrar aqueles que já aparecem nos nomes dos arquivos
         const uniqueCodes = carCodes.filter(code => {
@@ -2680,24 +2657,50 @@ async function calculateEnvironmentalMetricsCombined() {
         });
     });
 
+
     const results = await Promise.all(carPromises);
     
+    // --- SEGUNDA PARTE (Aqui usamos 'm.area') ---
     results.forEach(m => {
         const carFeat = carCodeFeatures[carCodes.indexOf(m.code)];
         const cleaned = cleanGeometry(carFeat);
         
+        // --- VÍNCULO UC ---
         if (!m.ucQueryError) {
             ucLayers.forEach(l => {
                 const gj = l.toGeoJSON();
-                (gj.features || [gj]).forEach(f => { if(turf.booleanIntersects(cleaned, f)) m.intersectingUCs.push(f); });
+                (gj.features || [gj]).forEach(f => { 
+                    if(turf.booleanIntersects(cleaned, f)) {
+                        const areaInterHa = safeIntersectionArea(cleaned, f);
+                        const percentual = m.area > 0 ? (areaInterHa / m.area) * 100 : 0; 
+                        
+                        const props = { ...(f.properties || {}) };
+                        props._area_interseccao_ha = areaInterHa;
+                        props._percentual_interseccao = percentual;
+                        
+                        m.intersectingUCs.push({ properties: props }); 
+                    }
+                });
             });
             m.hasUC = m.intersectingUCs.length > 0;
         }
 
+        // --- VÍNCULO FLORESTAS PÚBLICAS ---
         if (!m.publicForestsQueryError) {
             publicForestLayers.forEach(l => {
                 const gj = l.toGeoJSON();
-                (gj.features || [gj]).forEach(f => { if(turf.booleanIntersects(cleaned, f)) m.intersectingPublicForests.push(f); });
+                (gj.features || [gj]).forEach(f => { 
+                    if(turf.booleanIntersects(cleaned, f)) {
+                        const areaInterHa = safeIntersectionArea(cleaned, f);
+                        const percentual = m.area > 0 ? (areaInterHa / m.area) * 100 : 0; 
+                        
+                        const props = { ...(f.properties || {}) };
+                        props._area_interseccao_ha = areaInterHa;
+                        props._percentual_interseccao = percentual;
+                        
+                        m.intersectingPublicForests.push({ properties: props });
+                    }
+                });
             });
         }
 
@@ -2707,7 +2710,13 @@ async function calculateEnvironmentalMetricsCombined() {
             window.allMapBiomasAlerts.forEach(alerta => {
                 try {
                     if (turf.booleanIntersects(cleaned, alerta)) {
-                        m.mapBiomasAlerts.push(alerta.properties);
+                        const areaInterHa = safeIntersectionArea(cleaned, alerta);
+                        const percentual = m.area > 0 ? (areaInterHa / m.area) * 100 : 0;
+                        
+                        const props = { ...alerta.properties };
+                        props._area_interseccao_ha = areaInterHa;
+                        props._percentual_interseccao = percentual;
+                        m.mapBiomasAlerts.push(props);
                     }
                 } catch(e) { console.warn("Erro ao processar interseção MapBiomas para o CAR:", e); }
             });
@@ -2718,7 +2727,13 @@ async function calculateEnvironmentalMetricsCombined() {
             window.allIbamaEmbargos.forEach(embargo => {
                 try {
                     if (turf.booleanIntersects(cleaned, embargo)) {
-                        m.ibamaEmbargos.push(embargo.properties || embargo);
+                        const areaInterHa = safeIntersectionArea(cleaned, embargo);
+                        const percentual = m.area > 0 ? (areaInterHa / m.area) * 100 : 0;
+                        
+                        const props = { ...(embargo.properties || embargo) };
+                        props._area_interseccao_ha = areaInterHa;
+                        props._percentual_interseccao = percentual;
+                        m.ibamaEmbargos.push(props);
                     }
                 } catch (e) { console.warn("Erro ao processar interseção IBAMA para o CAR", e); }
             });
@@ -2732,298 +2747,7 @@ async function calculateEnvironmentalMetricsCombined() {
         carMetrics: results
     };
 }
-function showEnvironmentalModal() {
-    // Limpa overlays ambientais globais se não houver CAR carregado
-    if (!carCodes || carCodes.length === 0) {
-        window.allIbamaEmbargos = [];
-        window.ibamaQueryError = undefined;
-        window.allMapBiomasAlerts = [];
-        window.mapBiomasQueryError = undefined;
-        window.allPublicForests = [];
-        window.publicForestsQueryError = undefined;
-    }
 
-    if (!window.environmentalMetrics) return;
-
-    const metrics = window.environmentalMetrics;
-    const now = new Date();
-    const dateTime = now.toLocaleString('pt-BR');
-
-    const hasSuppression = metrics.hasSuppression || metrics.totalDeforestationArea > 0;
-
-    // NOVO: Regra exata para a mensagem "Não foi possível consultar"
-    const supportedStates = ['PR', 'RS', 'SC', 'MS'];
-    const hasUnconsultedProdes = metrics.carMetrics.some(car => {
-        const uf = (car.code || '').slice(0, 2).toUpperCase();
-        if (supportedStates.includes(uf)) {
-            // Se for estado suportado, verifica se a rede de fallback falhou
-            const apiOk = car.prodesConsultaOk;
-            const fallbackOk = car.properties && car.properties.fallbackNetworkSuccess;
-            return (!apiOk && !fallbackOk); // Só é não consultado se as duas redes caírem
-        } else {
-            // Se NÃO for estado suportado, e a API padrão falhar
-            return !car.prodesConsultaOk;
-        }
-    });
-
-    const isGloballyConsulted = !hasUnconsultedProdes;
-
-    let content = `
-        <div class="space-y-6">
-            <div class="flex items-center justify-between border-b pb-4">
-                <div class="text-sm text-gray-500">Relatório gerado em: <span class="font-semibold">${dateTime}</span></div>
-            </div>
-
-            <!-- 1. CARDS DE RESUMO -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div class="bg-blue-50 p-4 rounded-lg border border-blue-100">
-                    <div class="text-blue-600 text-xs font-bold uppercase tracking-wider">Área Total CAR(s)</div>
-                    <div class="text-2xl font-black text-blue-900">${metrics.totalCarArea.toFixed(2)} <span class="text-sm font-normal">ha</span></div>
-                </div>
-                <div class="${metrics.totalDeforestationArea > 0 ? 'bg-red-50 border-red-100' : (isGloballyConsulted ? 'bg-green-50 border-green-100' : 'bg-gray-100 border-gray-300')} p-4 rounded-lg border">
-                    <div class="${metrics.totalDeforestationArea > 0 ? 'text-red-600' : (isGloballyConsulted ? 'text-green-600' : 'text-gray-600')} text-xs font-bold uppercase tracking-wider">Supressão PRODES (19-25)</div>
-                    <div class="text-2xl font-black ${metrics.totalDeforestationArea > 0 ? 'text-red-900' : (isGloballyConsulted ? 'text-green-900' : 'text-slate-800')}">${metrics.totalDeforestationArea.toFixed(2)} <span class="text-sm font-normal">ha</span></div>
-                </div>
-                <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                    <div class="text-gray-600 text-xs font-bold uppercase tracking-wider">Comprometimento Médio</div>
-                    <div class="text-2xl font-black text-gray-900">${metrics.totalDeforestationPercent.toFixed(2)}%</div>
-                </div>
-            </div>
-
-            <!-- 2. MENSAGEM DE CONFORMIDADE/SUPRESSÃO -->
-            ${(() => {
-                const hasSuspended = metrics.carMetrics.some(car => {
-                    const statusImovel = (car.properties?.status_imovel || '').toUpperCase();
-                    return statusImovel === 'SU' || statusImovel === 'SUSPENSO';
-                });
-                const hasUCOverlap = metrics.carMetrics.some(car => car.hasUC);
-                const hasIbama = metrics.carMetrics.some(car => car.ibamaQueryError === false ? (Array.isArray(car.ibamaEmbargos) && car.ibamaEmbargos.length > 0) : false);
-                const hasMapbiomas = metrics.carMetrics.some(car => car.mapBiomasQueryError === false ? (Array.isArray(car.mapBiomasAlerts) && car.mapBiomasAlerts.length > 0) : false);
-                const hasPublicForests = metrics.carMetrics.some(car => car.publicForestsQueryError === false ? (Array.isArray(car.intersectingPublicForests) && car.intersectingPublicForests.length > 0) : false);
-                if (hasSuspended || hasUCOverlap || hasSuppression || hasIbama || hasMapbiomas || hasPublicForests) {
-                    return `
-                        <div class="bg-amber-50 border-l-4 border-amber-500 p-4 text-amber-800 text-sm shadow-sm rounded-r-lg">
-                            <div class="flex items-center gap-2 font-bold mb-1">
-                                <i class="ph-warning-octagon-fill text-xl"></i> Alerta de risco detectado
-                            </div>
-                            Foi detectado risco ambiental relevante (imóvel suspenso ou sobreposição com áreas de risco). Verifique os detalhes abaixo.
-                        </div>
-                    `;
-                } else if (hasUnconsultedProdes) {
-                    return `
-                        <div class="bg-gray-50 border-l-4 border-gray-400 p-4 text-slate-800 text-sm shadow-sm rounded-r-lg">
-                            <div class="flex items-center gap-2 font-bold mb-1">
-                                <i class="ph-warning-octagon-fill text-xl"></i> Não foi possível consultar o PRODES
-                            </div>
-                            Não foi possível obter informações do PRODES para CARs fora de PR, RS, SC e MS, ou houve falha de conexão. Verifique os dados no painel de consulta do MMA.
-                        </div>
-                    `;
-                } else {
-                    return `
-                        <div class="bg-green-50 border-l-4 border-green-500 p-4 text-green-800 text-sm shadow-sm rounded-r-lg">
-                            <div class="flex items-center gap-2 font-bold mb-1">
-                                <i class="ph-check-circle-fill text-xl"></i> Conformidade Ambiental
-                            </div>
-                            Não foram identificados polígonos de desmatamento PRODES entre 2019 e 2025 dentro do(s) CAR(s) analisado(s). Situação indicativa de conformidade.
-                        </div>
-                    `;
-                }
-            })()}
-
-            <h5 class="text-lg font-bold text-gray-800 flex items-center gap-2 pt-4">
-                <i class="ph-shield-check text-green-600"></i> Detalhamento por Imóvel
-            </h5>
-    `;
-
-    metrics.carMetrics.forEach(car => {
-        const statusImovel = (car.properties?.status_imovel || '').toUpperCase();
-        const isSuspended = statusImovel === 'SU' || statusImovel === 'SUSPENSO';
-        
-        content += `
-            <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-6">
-                <div class="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
-                    <span class="font-mono font-bold text-slate-800">${car.code}</span>
-                    <span class="px-3 py-1 rounded-full text-xs font-bold ${isSuspended ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}">
-                        Status SICAR: ${statusImovel || 'N/D'}
-                    </span>
-                </div>
-
-                <div class="p-4 space-y-4">
-
-                    ${isSuspended ? `
-                        <div class="bg-amber-50 border border-amber-200 p-4 flex gap-3 rounded-lg mb-2">
-                            <i class="ph-warning-octagon-fill text-amber-500 text-2xl"></i>
-                            <div>
-                                <div class="font-bold text-amber-900">Alerta de risco detectado</div>
-                                <div class="text-sm text-amber-800">Este imóvel consta como SUSPENSO (SU) no SICAR. Verifique a regularidade antes de prosseguir com qualquer operação.</div>
-                            </div>
-                        </div>
-                    ` : ''}
-
-                    ${(car.prodesData && car.prodesData.resultados) ? `
-                        <div class="bg-orange-50 border border-orange-400 p-3 rounded-md text-orange-900 text-sm mt-1">
-                            <b>Sobreposição:</b> ${car.prodesData.resultados}
-                        </div>
-                    ` : ((!car.prodesConsultaOk && !car.hasOverlap && !(car.properties && car.properties.fallbackNetworkSuccess)) ? `
-                        <div class="bg-gray-100 border border-gray-300 p-3 rounded-md text-slate-800 text-sm mt-1">
-                            <b>Não foi possível obter informações do PRODES para este CAR. Verifique os dados no painel de consulta do MMA.</b>
-                        </div>
-                    ` : (car.hasOverlap ? (() => {
-                        let anos = [];
-                        if (car.properties && Array.isArray(car.properties.anosFallback)) { anos = car.properties.anosFallback; }
-                        else if (carCodeFeatures && carCodeFeatures.length > 0) {
-                            const idx = carCodes.indexOf(car.code);
-                            if (idx >= 0) {
-                                const f = carCodeFeatures[idx];
-                                if (f && f.properties && Array.isArray(f.properties.anosFallback)) anos = f.properties.anosFallback;
-                            }
-                        }
-                        let anosTxt = anos.length > 0 ? [...new Set(anos)].join(', ') : 'Ano não identificado';
-                        let modFisc = Number(car.properties?.modulos_fiscais !== undefined ? car.properties.modulos_fiscais : car.properties?.m_fiscal || 0);
-                        let msg = `<b>Foram identificadas supressões de vegetação (PRODES) nos anos ${anosTxt}</b>`;
-                        if (modFisc > 0 && modFisc < 4) {
-                            msg += `<br><span class='text-red-700 font-semibold'>Número de módulos fiscais menor que 4 (quatro), operação não será objeto de análise Prodes até 4 de janeiro de 2027.</span>`;
-                        }
-                        return `<div class="bg-yellow-50 border border-yellow-400 p-3 rounded-md text-yellow-900 text-sm mt-1">${msg}</div>`;
-                    })() : ((car.properties && car.properties.fallbackConsultaOk) ? `
-                        <div class="bg-green-50 border border-green-400 p-3 rounded-md text-green-900 text-sm mt-1"><b>Não foram identificadas supressões de vegetação PRODES entre 2019 e 2025 dentro do CAR analisado. Situação indicativa de conformidade.</b></div>
-                    ` : '')))}
-
-                    <div class="flex flex-col md:flex-row md:gap-8 gap-2 border-b pb-2 mb-2">
-                        <div class="flex-1">
-                            <h6 class="text-xs font-bold text-gray-400 uppercase mb-1">Informações Cadastrais do CAR</h6>
-                            <ul class="space-y-1 text-sm">
-                                <li><span class="text-gray-600">Área do Imóvel:</span> <span class="font-semibold">${car.area?.toFixed(2) || 'N/D'} ha</span></li>
-                                <li><span class="text-gray-600">Status:</span> <span class="font-semibold">${car.properties?.status_imovel || 'N/D'}</span></li>
-                                <li><span class="text-gray-600">Condição:</span> <span class="font-semibold">${car.properties?.condicao_imovel || 'N/D'}</span></li>
-                                <li><span class="text-gray-600">Última Atualização:</span> <span class="font-semibold">${car.properties?.data_atualizacao || car.properties?.data_ultima_alteracao || 'N/D'}</span></li>
-                                <li><span class="text-gray-600">Data de Criação:</span> <span class="font-semibold">${car.properties?.dat_criacao || 'N/D'}</span></li>
-                                <li><span class="text-gray-600">Módulos Fiscais:</span> <span class="font-semibold">${car.properties?.modulos_fiscais !== undefined ? car.properties.modulos_fiscais : (car.properties?.m_fiscal !== undefined ? car.properties.m_fiscal : '0')}</span></li>
-                                <li><span class="text-gray-600">Município:</span> <span class="font-semibold">${car.properties?.municipio || 'N/D'}</span></li>
-                                <li><span class="text-gray-600">UF:</span> <span class="font-semibold">${car.properties?.uf || 'N/D'}</span></li>
-                            </ul>
-                        </div>
-                    </div>
-
-                    <div>
-                        <h6 class="text-xs font-bold text-gray-400 uppercase mb-1">Análise Ambiental</h6>
-                        <ul class="space-y-1 text-sm">
-                            <li><span class="text-gray-600">Bioma:</span> <span class="font-semibold">${car.biomaAnalise || car.prodesData?.bioma || 'N/D'}</span></li>
-                            <li><span class="text-gray-600">Supressão PRODES (19-25):</span> <span class="font-bold ${car.deforestationArea > 0 ? 'text-red-600' : 'text-green-600'}">${car.deforestationArea?.toFixed(2) || '0'} ha</span></li>
-			                ${car.prodesEdgeOnly ? `<li><span class="text-amber-700 text-xs font-bold bg-amber-50 p-1 rounded border border-amber-200 block mt-1"><i class="ph-info"></i> Conforme Nota Técnica Inpe, a sobreposição menor que 60m pode ser desconsiderada.</span></li>` : ''}
-                            <li><span class="text-gray-600">Soma Desmatamento:</span> <span class="font-semibold">${car.somaDesmatamentoAnalise || car.prodesData?.soma_desmat || 'N/D'}</span></li>
-                            <li><span class="text-gray-600">Dentro do Critério:</span> <span class="font-semibold">${car.prodesData?.dentro_criterio || car.prodesData?.dentro_tolerancia || 'N/D'}</span></li>
-                            <li><span class="text-gray-600">Critério Aplicado:</span> <span class="font-semibold">${car.prodesData?.criterio_aplicado || car.prodesData?.tolerancia_aplicada || 'N/D'}</span></li>
-                            <li><span class="text-gray-600">Status Julgamento PRODES:</span> <span class="font-semibold">${car.prodesData?.julg_status || 'N/D'}</span></li>
-                        </ul>
-                        <h6 class="text-xs font-bold text-red-800 uppercase mb-1 mt-4">Sobreposição UC</h6>
-                        ${car.ucQueryError ? `<span class="text-gray-500">A consulta não foi possível.</span>` : (car.hasUC ? `<ul class="space-y-1 text-sm"><li><span class="text-red-700 font-semibold">Este CAR intersecta Unidade de Conservação.</span></li></ul>` : `<span class="text-gray-500">Nenhuma unidade de conservação intersecta este CAR.</span>`) }
-                    </div>
-
-                    <div>
-                        <h6 class="text-xs font-bold text-green-700 uppercase mb-1 mt-4">Florestas Públicas Intersectadas</h6>
-                        ${car.publicForestsQueryError ? `<span class="text-gray-500">A consulta não foi possível.</span>` : ((car.intersectingPublicForests && car.intersectingPublicForests.length > 0) ? `
-                            <ul class="space-y-2 text-sm">
-                                ${car.intersectingPublicForests.map((pf, idx) => `
-                                    <li class="border border-green-200 rounded-lg p-2 bg-green-50">
-                                        <b>${pf.properties.nome || 'Nome não disponível'}</b><br>
-                                        <span class="text-gray-600">UF:</span> <span class="font-semibold">${pf.properties.uf || 'N/D'}</span><br>
-                                        <span class="text-gray-600">Categoria:</span> <span class="font-semibold">${pf.properties.categoria || 'N/D'}</span><br>
-                                        <span class="text-gray-600">Governo:</span> <span class="font-semibold">${pf.properties.governo || 'N/D'}</span><br>
-                                        <span class="text-gray-600">Gestão:</span> <span class="font-semibold">${pf.properties.gestao || 'N/D'}</span><br>
-                                        <span class="text-gray-600">Ano de Criação:</span> <span class="font-semibold">${pf.properties.ano_criacao || 'N/D'}</span><br>
-                                        <span class="text-gray-600">Área (ha):</span> <span class="font-semibold">${pf.properties.area_ha || 'N/D'}</span><br>
-                                        <span class="text-gray-600">Situação:</span> <span class="font-semibold">${pf.properties.situacao || 'N/D'}</span><br>
-                                        <span class="text-gray-600">Origem:</span> <span class="font-semibold">${pf.properties.origem || 'N/D'}</span><br>
-                                        <span class="text-gray-600">Código CNFP:</span> <span class="font-semibold">${pf.properties.cod_cnfp || 'N/D'}</span><br>
-                                    </li>
-                                `).join('')}
-                            </ul>
-                        ` : `<span class="text-gray-500">Nenhuma floresta pública intersecta este CAR.</span>`)}
-                    </div>
-
-                    <div>
-                        <h6 class="text-xs font-bold text-red-800 uppercase mb-1 mt-4">Alertas MapBiomas Intersectados</h6>
-                        ${car.mapBiomasQueryError ? `<span class="text-gray-500">A consulta não foi possível.</span>` : ((car.mapBiomasAlerts && car.mapBiomasAlerts.length > 0) ? `
-                            <ul class="space-y-2 text-sm">
-                                ${car.mapBiomasAlerts.map((mb, idx) => `
-                                    <li class="border border-red-200 rounded-lg p-2 bg-red-50">
-                                        <b>Código do Alerta: ${mb.alertCode}</b><br>
-                                        <span class="text-gray-600">Detectado em:</span> <span class="font-semibold">${mb.detectedAt ? new Date(mb.detectedAt).toLocaleDateString('pt-BR') : 'N/D'}</span><br>
-                                        <span class="text-gray-600">Publicado em:</span> <span class="font-semibold">${mb.publishedAt ? new Date(mb.publishedAt).toLocaleDateString('pt-BR') : 'N/D'}</span><br>
-                                        <span class="text-gray-600">Área (ha):</span> <span class="font-semibold">${mb.areaHa || 'N/D'}</span><br>
-                                        <span class="text-gray-600">Fonte(s):</span> <span class="font-semibold">${Array.isArray(mb.sources) ? mb.sources.join(', ') : mb.sources || 'N/D'}</span><br>
-                                        <a href="https://plataforma.alerta.mapbiomas.org/alerta/${mb.alertCode}" target="_blank" class="text-blue-700 hover:text-blue-900 hover:underline font-bold mt-2 inline-flex items-center gap-1"><i class="ph-link"></i> Acessar Laudo Oficial</a>
-                                    </li>
-                                `).join('')}
-                            </ul>
-                        ` : `<span class="text-gray-500">Nenhum alerta MapBiomas intersecta este CAR.</span>`)}
-                    </div>
-                </div>
-            </div>
-        `;
-    });
-
-    // IBAMA Embargos
-    content += `
-        <div class="mt-8">
-            <h5 class="text-lg font-bold text-purple-800 flex items-center gap-2 mb-2"><i class="ph-warning-octagon-fill"></i> Embargos IBAMA Intersectados</h5>
-            ${(window.ibamaQueryError) ? `<span class="text-gray-500">A consulta não foi possível.</span>` : ((window.allIbamaEmbargos && window.allIbamaEmbargos.length > 0) ? `
-                <ul class="space-y-2 text-sm">
-                    ${window.allIbamaEmbargos.map((ib, idx) => {
-                        const p = ib.properties || {};
-                        let descricao = p.des_infracao || '';
-                        descricao = descricao.replace(/\r\n|\r|\n/g, '<br>');
-                        descricao = descricao.replace(/(.{80})/g, '$1<br>');
-                        return `<li class="border border-purple-200 rounded-lg p-2 bg-purple-50">
-                            <b>Infrator:</b> ${p.nom_pessoa || ''} <br>
-                            <b>CPF/CNPJ:</b> ${p.cpf_cnpj_infrator || ''} <br>
-                            <b>Seq TAD:</b> ${p.seq_tad || ''} <br>
-                            <b>Número TAD:</b> ${p.numero_tad || ''} <br>
-                            <b>Data TAD:</b> ${p.data_tad || ''} <br>
-                            <b>Latitude:</b> ${p.num_latitude_tad || ''} <br>
-                            <b>Longitude:</b> ${p.num_longitude_tad || ''} <br>
-                            <b>Processo TAD:</b> ${p.processo_tad || ''} <br>
-                            <b>UF:</b> ${p.sig_uf || ''} <br>
-                            <b>Município:</b> ${p.nom_municipio || ''} <br>
-                            <b>Nº Auto Infração:</b> ${p.num_auto_infracao || ''} <br>
-                            <b>Série Auto Infração:</b> ${p.ser_auto_infracao || ''} <br>
-                            <b>Cód. Município:</b> ${p.cod_municipio || ''} <br>
-                            <b>Status TAD:</b> ${p.status_tad || ''} <br>
-                            <b>Área Desmatada:</b> ${p.qtd_area_desmatada || ''} <br>
-                            <b>Data Cadastro TAD:</b> ${p.data_cadastro_tad || ''} <br>
-                            <b>Descrição Infração:</b> <span style='white-space:pre-line;'>${descricao}</span> <br>
-                            <b>Série TAD:</b> ${p.serie_tad || ''} <br>
-                            <b>Situação Embargo Polígono:</b> ${p.sit_embarga_poligono || ''} <br>
-                            <b>Legislação:</b> ${p.legislacao || ''} <br>
-                            <b>Artigo Legislação:</b> ${p.artigo_legislacao || ''} <br>
-                            <b>Artigo:</b> ${p.artigo || ''} <br>
-                            <b>Respeita Embargo:</b> ${p.respeita_embargo || ''} <br>
-                            <b>Data Geom:</b> ${p.data_geom || ''} <br>
-                            <b>Órgão:</b> ${p.orgao || ''}
-                        </li>`;
-                    }).join('')}
-                </ul>
-            ` : `<span class="text-gray-500">Nenhum embargo IBAMA intersecta este CAR.</span>`)}
-        </div>
-    </div>`;
-
-    document.getElementById('environmental-content').innerHTML = content;
-    document.getElementById('environmental-modal').style.display = 'flex';
-
-    // Garante que o botão será reabilitado ao fechar o modal
-    const closeBtn = document.getElementById('close-environmental-modal');
-    if (closeBtn) {
-        closeBtn.onclick = function() {
-            document.getElementById('environmental-modal').style.display = 'none';
-            const envBtn = document.getElementById('btnRelatorio');
-            if (envBtn) {
-                envBtn.disabled = false;
-                envBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-            }
-        };
-    }
-}
  // Helper para converter imagem em DataURL (usado no cabeçalho do PDF)
     async function loadImageAsDataUrl(url) {
         return new Promise((resolve, reject) => {
@@ -3797,220 +3521,294 @@ function openRelatorioModal() {
         btn.classList.remove('opacity-50', 'cursor-not-allowed');
     }
 }
-function populateEnvironmentalTab() {
-    const container = document.getElementById('environmental-content-unified');
-    // NOVO: Verifica se há CARs carregados antes de mostrar métricas
-    if (carCodes.length === 0) {
-        container.innerHTML = `
-            <div class="p-8 text-center">
-                <div class="inline-flex items-center justify-center w-16 h-16 bg-amber-100 text-amber-600 rounded-full mb-4">
-                    <i class="ph-warning-octagon" style="font-size: 32px;"></i>
-                </div>
-                <h4 class="text-lg font-bold text-gray-800 mb-2">Nenhum CAR carregado para análise</h4>
-                <p class="text-gray-600 max-w-md mx-auto mb-6">
-                    Para gerar o relatório ambiental, você precisa informar um código de CAR, fazer upload de um arquivo ou clicar em <strong>"Sim, analisar"</strong> no(s) CAR(s) detectado(s) automaticamente no mapa.
-                </p>
-                <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-blue-800 text-left inline-block">
-                    <strong>Dica:</strong> Se você já carregou as glebas, verifique se existem contornos <span class="text-amber-600 font-bold">pontilhados em amarelo</span> no mapa e clique neles para iniciar a validação automática.
-                </div>
-            </div>`;
-        return;
-    }
-
-    const metrics = window.environmentalMetrics;
-    if (!metrics) {
-        container.innerHTML = '<div class="p-8 text-center text-gray-500"><i class="ph-spinner ph-spin text-3xl mb-2"></i><p>Concluindo processamento dos dados ambientais...</p></div>';
-        return;
-    }
-
-    const dateTime = new Date().toLocaleString('pt-BR');
-    const hasUnconsulted = metrics.carMetrics.some(car => !car.prodesConsultaOk && !car.properties?.fallbackNetworkSuccess);
-    const isGloballyConsulted = !hasUnconsulted;
-
-    let html = `<div class="space-y-6">
-        <div class="flex items-center justify-between border-b pb-4">
-            <div class="text-sm text-gray-500">Relatório gerado em: <span class="font-semibold">${dateTime}</span></div>
-        </div>
-
-        <!-- Cards de Resumo -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div class="bg-blue-50 p-4 rounded-lg border border-blue-100">
-                <div class="text-blue-600 text-xs font-bold uppercase tracking-wider">Área Total CAR(s)</div>
-                <div class="text-2xl font-black text-blue-900">${metrics.totalCarArea.toFixed(2)} <span class="text-sm font-normal">ha</span></div>
-            </div>
-            <div class="${metrics.totalDeforestationArea > 0 ? 'bg-red-50 border-red-100' : (isGloballyConsulted ? 'bg-green-50 border-green-100' : 'bg-gray-100 border-gray-300')} p-4 rounded-lg border">
-                <div class="${metrics.totalDeforestationArea > 0 ? 'text-red-600' : (isGloballyConsulted ? 'text-green-600' : 'text-gray-600')} text-xs font-bold uppercase tracking-wider">Supressão PRODES (19-25)</div>
-                <div class="text-2xl font-black ${metrics.totalDeforestationArea > 0 ? 'text-red-900' : (isGloballyConsulted ? 'text-green-900' : 'text-slate-800')}">${metrics.totalDeforestationArea.toFixed(2)} <span class="text-sm font-normal">ha</span></div>
-            </div>
-            <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                <div class="text-gray-600 text-xs font-bold uppercase tracking-wider">Comprometimento Médio</div>
-                <div class="text-2xl font-black text-gray-900">${metrics.totalDeforestationPercent.toFixed(2)}%</div>
-            </div>
-        </div>
-
-        ${(() => {
-            const hasCritical = metrics.carMetrics.some(car => {
-                return ['SU', 'SUSPENSO'].includes((car.properties?.status_imovel || '').toUpperCase()) || 
-                       car.hasUC || car.deforestationArea > 0 ||
-                       (car.intersectingPublicForests && car.intersectingPublicForests.length > 0) ||
-                       (car.mapBiomasAlerts && car.mapBiomasAlerts.length > 0) ||
-                       (car.ibamaEmbargos && car.ibamaEmbargos.length > 0);
-            });
-
-            return hasCritical ? `
-                <div class="bg-amber-50 border-l-4 border-amber-500 p-4 text-amber-800 text-sm shadow-sm rounded-r-lg">
-                    <div class="flex items-center gap-2 font-bold mb-1"><i class="ph-warning-octagon-fill text-xl"></i> Alerta de risco detectado</div>
-                    Foi detectado risco ambiental relevante ou status de suspensão nos imóveis analisados. Verifique o detalhamento abaixo.
-                </div>` : `
-                <div class="bg-green-50 border-l-4 border-green-500 p-4 text-green-800 text-sm shadow-sm rounded-r-lg">
-                    <div class="flex items-center gap-2 font-bold mb-1"><i class="ph-check-circle-fill text-xl"></i> Conformidade Ambiental</div>
-                    Nenhuma restrição ambiental crítica identificada nas bases consultadas.
+    function populateEnvironmentalTab() {
+        const container = document.getElementById('environmental-content-unified');
+        // NOVO: Verifica se há CARs carregados antes de mostrar métricas
+        if (carCodes.length === 0) {
+            container.innerHTML = `
+                <div class="p-8 text-center">
+                    <div class="inline-flex items-center justify-center w-16 h-16 bg-amber-100 text-amber-600 rounded-full mb-4">
+                        <i class="ph-warning-octagon" style="font-size: 32px;"></i>
+                    </div>
+                    <h4 class="text-lg font-bold text-gray-800 mb-2">Nenhum CAR carregado para análise</h4>
+                    <p class="text-gray-600 max-w-md mx-auto mb-6">
+                        Para gerar o relatório ambiental, você precisa informar um código de CAR, fazer upload de um arquivo ou clicar em <strong>"Sim, analisar"</strong> no(s) CAR(s) detectado(s) automaticamente no mapa.
+                    </p>
+                    <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-blue-800 text-left inline-block">
+                        <strong>Dica:</strong> Se você já carregou as glebas, verifique se existem contornos <span class="text-amber-600 font-bold">pontilhados em amarelo</span> no mapa e clique neles para iniciar a validação automática.
+                    </div>
                 </div>`;
-        })()}
+            return;
+        }
 
-        <h5 class="text-lg font-bold text-gray-800 flex items-center gap-2 pt-4">
-            <i class="ph-shield-check text-green-600"></i> Detalhamento por Imóvel
-        </h5>`;
+        const metrics = window.environmentalMetrics;
+        if (!metrics) {
+            container.innerHTML = '<div class="p-8 text-center text-gray-500"><i class="ph-spinner ph-spin text-3xl mb-2"></i><p>Concluindo processamento dos dados ambientais...</p></div>';
+            return;
+        }
 
-    metrics.carMetrics.forEach(car => {
-        const props = car.properties || {};
-        const isSuspended = ['SU', 'SUSPENSO'].includes((props.status_imovel || '').toUpperCase());
-        let anosTxt = (car.anos && car.anos.length > 0) ? car.anos.join(', ') : 'Ano não identificado';
-        let modFisc = Number(props.modulos_fiscais || props.m_fiscal || 0);
+        const dateTime = new Date().toLocaleString('pt-BR');
+        const hasUnconsulted = metrics.carMetrics.some(car => !car.prodesConsultaOk && !car.properties?.fallbackNetworkSuccess);
+        const isGloballyConsulted = !hasUnconsulted;
 
-        html += `
-        <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-8">
-            <div class="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
-                <span class="font-mono font-bold text-slate-800">${car.code}</span>
-                <span class="px-3 py-1 rounded-full text-xs font-bold ${isSuspended ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}">
-                    Status SICAR: ${props.status_imovel || 'N/D'}
-                </span>
+        let html = `<div class="space-y-6">
+            <div class="flex items-center justify-between border-b pb-4">
+                <div class="text-sm text-gray-500">Relatório gerado em: <span class="font-semibold">${dateTime}</span></div>
             </div>
 
-            <div class="p-4 space-y-6">
-                ${(car.deforestationArea > 0) ? `
-                    <div class="bg-orange-50 border border-orange-400 p-3 rounded-md text-orange-900 text-sm">
-                        <b>Supressão de vegetação detectada (PRODES) no(s) ano(s): ${anosTxt}</b>
-                        ${(modFisc > 0 && modFisc < 4) ? `<br><span class="text-red-700 font-bold">Imóvel com ${modFisc.toFixed(2)} módulos fiscais: operação não será objeto de análise Prodes até 04/01/2027.</span>` : ''}
-                    </div>
-                ` : `<div class="bg-green-50 border border-green-400 p-3 rounded-md text-green-900 text-sm">Nenhuma supressão PRODES identificada (2019-2025).</div>`}
+            <!-- Cards de Resumo -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                    <div class="text-blue-600 text-xs font-bold uppercase tracking-wider">Área Total CAR(s)</div>
+                    <div class="text-2xl font-black text-blue-900">${metrics.totalCarArea.toFixed(2)} <span class="text-sm font-normal">ha</span></div>
+                </div>
+                <div class="${metrics.totalDeforestationArea > 0 ? 'bg-red-50 border-red-100' : (isGloballyConsulted ? 'bg-green-50 border-green-100' : 'bg-gray-100 border-gray-300')} p-4 rounded-lg border">
+                    <div class="${metrics.totalDeforestationArea > 0 ? 'text-red-600' : (isGloballyConsulted ? 'text-green-600' : 'text-gray-600')} text-xs font-bold uppercase tracking-wider">Supressão PRODES (19-25)</div>
+                    <div class="text-2xl font-black ${metrics.totalDeforestationArea > 0 ? 'text-red-900' : (isGloballyConsulted ? 'text-green-900' : 'text-slate-800')}">${metrics.totalDeforestationArea.toFixed(2)} <span class="text-sm font-normal">ha</span></div>
+                </div>
+                <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <div class="text-gray-600 text-xs font-bold uppercase tracking-wider">Comprometimento Médio</div>
+                    <div class="text-2xl font-black text-gray-900">${metrics.totalDeforestationPercent.toFixed(2)}%</div>
+                </div>
+            </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <h6 class="text-xs font-bold text-gray-400 uppercase mb-2 border-b">Informações Cadastrais</h6>
-                        <ul class="space-y-1 text-sm">
-                            <li>Área do Imóvel: <b>${car.area.toFixed(2)} ha</b></li>
-			    <li>Data de Criação: <b>${props.dat_criacao || 'N/D'}</b></li>
-                            <li>Status: <b>${props.status_imovel || 'N/D'}</b></li>
-                            <li>Módulos Fiscais: <b>${modFisc.toFixed(4)}</b></li>
-                            <li>Município/UF: <b>${props.municipio || 'N/D'} - ${props.uf || ''}</b></li>
-                        </ul>
-                    </div>
-                    <div>
-                        <h6 class="text-xs font-bold text-gray-400 uppercase mb-2 border-b">Análise Ambiental PRODES</h6>
-                        <ul class="space-y-1 text-sm">
-                            <li>Bioma: <b>${car.biomaAnalise}</b></li>
-                            <li>Supressão (19-25): <b class="${car.deforestationArea > 0 ? 'text-red-600' : ''}">${car.deforestationArea.toFixed(2)} ha</b></li>
-                            <li>Soma Desmatamento: <b>${car.somaDesmatamentoAnalise} ha</b></li>
-                            
-                            <!-- Detalhamento por Ano -->
-                            ${Object.entries(car.areaPorAno || {}).sort((a,b) => a[0]-b[0]).map(([ano, area]) => `
-                                <li class="ml-4 text-xs text-red-700 italic">
-                                    <i class="ph-caret-right"></i> PRODES ${ano}: <b>${area.toFixed(4)} ha</b>
-                                </li>
-                            `).join('')}
+            ${(() => {
+                const hasCritical = metrics.carMetrics.some(car => {
+                return ['SU', 'SUSPENSO'].includes((car.properties?.status_imovel || '').toUpperCase()) || 
+                    car.hasUC || car.deforestationArea > 0 ||
+                        (car.intersectingPublicForests && car.intersectingPublicForests.length > 0) ||
+                        (car.mapBiomasAlerts && car.mapBiomasAlerts.length > 0) ||
+                        (car.ibamaEmbargos && car.ibamaEmbargos.length > 0);
+                });
 
-                            <li>Dentro do Critério: <b>${car.prodesData?.dentro_criterio || car.prodesData?.dentro_tolerancia || 'N/D'}</b></li>
-                            <li>Julgamento PRODES: <b>${car.prodesData?.julg_status || 'N/D'}</b></li>
-                        </ul>
-                    </div>
+                return hasCritical ? `
+                    <div class="bg-amber-50 border-l-4 border-amber-500 p-4 text-amber-800 text-sm shadow-sm rounded-r-lg">
+                        <div class="flex items-center gap-2 font-bold mb-1"><i class="ph-warning-octagon-fill text-xl"></i> Alerta de risco detectado</div>
+                        Foi detectado risco ambiental relevante ou status de suspensão nos imóveis analisados. Verifique o detalhamento abaixo.
+                    </div>` : `
+                    <div class="bg-green-50 border-l-4 border-green-500 p-4 text-green-800 text-sm shadow-sm rounded-r-lg">
+                        <div class="flex items-center gap-2 font-bold mb-1"><i class="ph-check-circle-fill text-xl"></i> Conformidade Ambiental</div>
+                        Nenhuma restrição ambiental crítica identificada nas bases consultadas.
+                    </div>`;
+            })()}
+
+            <h5 class="text-lg font-bold text-gray-800 flex items-center gap-2 pt-4">
+                <i class="ph-shield-check text-green-600"></i> Detalhamento por Imóvel
+            </h5>`;
+
+        metrics.carMetrics.forEach(car => {
+            const props = car.properties || {};
+            const isSuspended = ['SU', 'SUSPENSO'].includes((props.status_imovel || '').toUpperCase());
+            let anosTxt = (car.anos && car.anos.length > 0) ? car.anos.join(', ') : 'Ano não identificado';
+            let modFisc = Number(props.modulos_fiscais || props.m_fiscal || 0);
+            // ✅ Sempre definir ANTES do template string
+            const areaPorAnoObj =
+                (car.areaPorAno && typeof car.areaPorAno === 'object')
+        ? car.areaPorAno
+        : {};
+
+            const hasProdesYearData = Object.values(areaPorAnoObj).some(v => Number(v) > 0);
+
+            const hasProdesData =
+                Number(car.deforestationArea || 0) > 0 ||
+                Number(car.somaDesmatamentoAnalise || 0) > 0 ||
+            hasProdesYearData ||
+            (car.prodesData && (
+            car.prodesData.dentro_criterio != null ||
+            car.prodesData.dentro_tolerancia != null ||
+            car.prodesData.julg_status != null
+            ));
+
+            html += `
+            <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-8">
+                <div class="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
+                    <span class="font-mono font-bold text-slate-800">${car.code}</span>
+                    <span class="px-3 py-1 rounded-full text-xs font-bold ${isSuspended ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}">
+                        Status SICAR: ${props.status_imovel || 'N/D'}
+                    </span>
                 </div>
 
-                <div class="space-y-4">
-                    <!-- UC DETALHADA -->
-                    <div class="text-xs p-3 rounded border ${car.ucQueryError ? 'bg-gray-100 border-gray-300 text-gray-500' : (car.intersectingUCs && car.intersectingUCs.length > 0 ? 'bg-red-50 border-red-200 text-red-900' : 'bg-green-50 border-green-200 text-green-800')}">
-                        <h6 class="font-bold uppercase mb-2">Sobreposição UC</h6>
-                        ${car.ucQueryError ? 
-                            `<span class="font-bold"><i class="ph-warning"></i> Não foi possível consultar a base de UCs.</span>` : 
-                            ((car.intersectingUCs && car.intersectingUCs.length > 0) ? car.intersectingUCs.map(uc => {
-                                const p = uc.properties || {};
-                                return `<div class="mb-3 border-b border-red-200 pb-2 last:border-0 last:mb-0 last:pb-0">
-                                    <b>Nome:</b> ${p.nomeuc || p.NOMEUC || p.nome || 'N/D'} <br>
-                                    <b>Categoria:</b> ${p.siglacateg || p.SIGLACATEG || 'N/D'} <br>
-                                    <b>Esfera Admin:</b> ${p.esferaadm || p.ESFERAADM || 'N/D'} <br>
-                                    <b>Ano Criação:</b> ${p.criacaoano || p.CRIACAOANO || 'N/D'} <br>
-                                    <b>Área (ha):</b> ${p.areahaalb ? Number(p.areahaalb).toFixed(2) : 'N/D'} <br>
-                                    <b>Ato de Criação:</b> ${p.criacaoato || p.CRIACAOATO || 'N/D'}
-                                </div>`;
-                            }).join('') : 'Nenhuma unidade de conservação intersecta este CAR.')
-                        }
+                <div class="p-4 space-y-6">
+                    ${(car.deforestationArea > 0) ? `
+                        <div class="bg-orange-50 border border-orange-400 p-3 rounded-md text-orange-900 text-sm">
+                            <b>Supressão de vegetação detectada (PRODES) no(s) ano(s): ${anosTxt}</b>
+                            ${(modFisc > 0 && modFisc < 4) ? `<br><span class="text-red-700 font-bold">Imóvel com ${modFisc.toFixed(2)} módulos fiscais: operação não será objeto de análise Prodes até 04/01/2027.</span>` : ''}
+                        </div>
+                    ` : `<div class="bg-green-50 border border-green-400 p-3 rounded-md text-green-900 text-sm">Nenhuma supressão PRODES identificada (2019-2025).</div>`}
+
+                    <div class="space-y-4">
+    <!-- INFORMAÇÕES CADASTRAIS (FULL WIDTH / VERTICAL) -->
+    <div class="p-3 rounded border bg-white border-gray-200">
+        <h6 class="text-xs font-bold text-gray-400 uppercase mb-2 border-b pb-2">
+        Informações Cadastrais
+        </h6>
+
+        <ul class="space-y-2 text-sm">
+        <li class="flex gap-2">
+            <span class="text-gray-600">Área do Imóvel:</span>
+            <b>${car.area.toFixed(2)} ha</b>
+        </li>
+
+        <li class="flex gap-2">
+            <span class="text-gray-600">Data de Criação:</span>
+            <b>${props.dat_criacao || 'N/D'}</b>
+        </li>
+
+        <li class="flex gap-2">
+            <span class="text-gray-600">Status:</span>
+            <b>${props.status_imovel || 'N/D'}</b>
+        </li>
+
+        <li class="flex gap-2">
+            <span class="text-gray-600">Módulos Fiscais:</span>
+            <b>${modFisc.toFixed(4)}</b>
+        </li>
+
+        <li class="flex gap-2">
+            <span class="text-gray-600">Município/UF:</span>
+            <b>${props.municipio || 'N/D'} - ${props.uf || ''}</b>
+        </li>
+        </ul>
+    </div>
+
+    
+    <!-- PRODES (FULL WIDTH / FORMATO LAUDO TIPO MAPBIOMAS) -->
+                ${hasProdesData ? `
+            <div class="text-xs p-3 rounded border bg-red-50 border-red-200 text-red-900">
+            <h6 class="font-bold uppercase mb-2">Análise Ambiental PRODES</h6>
+
+            <div class="mb-3 border-b border-red-200 pb-2 last:border-0 last:mb-0 last:pb-0">
+            <b>Bioma:</b> ${car.biomaAnalise || 'N/D'}<br>
+            <b>Supressão (19-25):</b> ${(Number(car.deforestationArea || 0)).toFixed(2)} ha<br>
+            <b>Soma Desmatamento:</b> ${(Number(car.somaDesmatamentoAnalise || 0)).toFixed(2)} ha<br>
+
+            <b style="color: #991b1b; background: #fee2e2; padding: 2px 4px; border-radius: 4px; display: inline-block; margin: 4px 0;">
+            Área PRODES dentro do CAR: ${(Number(car.deforestationArea || 0)).toFixed(2)} ha
+            (${(car.area && Number(car.area) > 0) ? ((Number(car.deforestationArea || 0) / Number(car.area)) * 100).toFixed(2) : '0.00'}%)
+            </b><br>
+
+            <b>Dentro do Critério:</b> ${car.prodesData?.dentro_criterio ?? car.prodesData?.dentro_tolerancia ?? 'N/D'}<br>
+            <b>Julgamento PRODES:</b> ${car.prodesData?.julg_status || 'N/D'}
+            </div>
+
+        <!--  Detalhamento por Ano (MESMO ESTILO MapBiomas/IBAMA) -->
+        
+    <div class="mt-3 mb-2 text-xs font-bold uppercase text-red-700">
+        Detalhamento por ano
+        </div>
+
+            ${Object.entries(areaPorAnoObj)
+            .sort((a,b) => Number(a[0]) - Number(b[0]))
+            .filter(([_, area]) => Number(area) > 0)   // não mostra anos zerados
+            .map(([ano, area]) => {
+                const areaHa = Number(area) || 0;
+                const percCar = (car.area && Number(car.area) > 0) ? (areaHa / Number(car.area) * 100) : 0;
+
+                return `
+                <div class="mb-3 border-b border-red-200 pb-2 last:border-0 last:mb-0 last:pb-0">
+                    <b>PRODES ${ano} — Área Total:</b> ${areaHa.toFixed(4)} ha<br>
+                    <b style="color: #991b1b; background: #fee2e2; padding: 2px 4px; border-radius: 4px; display: inline-block; margin: 4px 0;">
+                    Área PRODES ${ano} dentro do CAR: ${areaHa.toFixed(2)} ha (${percCar.toFixed(2)}%)
+                    </b><br>
+                </div>
+                `;
+            }).join('')}
+        </div>
+        ` : ``}
+    </div>
+                    
+
+                    <div class="space-y-4">
+                        <!-- UC DETALHADA -->
+                        <div class="text-xs p-3 rounded border ${car.ucQueryError ? 'bg-gray-100 border-gray-300 text-gray-500' : (car.intersectingUCs && car.intersectingUCs.length > 0 ? 'bg-red-50 border-red-200 text-red-900' : 'bg-green-50 border-green-200 text-green-800')}">
+                            <h6 class="font-bold uppercase mb-2">Sobreposição UC</h6>
+                            ${car.ucQueryError ? 
+                                `<span class="font-bold"><i class="ph-warning"></i> Não foi possível consultar a base de UCs.</span>` : 
+                                ((car.intersectingUCs && car.intersectingUCs.length > 0) ? car.intersectingUCs.map(uc => {
+                                    const p = uc.properties || {};
+                                    return `<div class="mb-3 border-b border-red-200 pb-2 last:border-0 last:mb-0 last:pb-0">
+                                        <b>Nome:</b> ${p.nomeuc || p.NOMEUC || p.nome || 'N/D'} <br>
+                                        <b>Categoria:</b> ${p.siglacateg || p.SIGLACATEG || 'N/D'} <br>
+                                        <b>Esfera Admin:</b> ${p.esferaadm || p.ESFERAADM || 'N/D'} <br>
+                                        <b>Ano Criação:</b> ${p.criacaoano || p.CRIACAOANO || 'N/D'} <br>
+                                        <b>Área Total da UC:</b> ${p.areahaalb ? Number(p.areahaalb).toFixed(2) : 'N/D'} ha<br>
+                                        <b style="color: #991b1b; background: #fee2e2; padding: 2px 4px; border-radius: 4px; display: inline-block; margin: 4px 0;">Área da UC dentro do CAR: ${p._area_interseccao_ha ? p._area_interseccao_ha.toFixed(2) : '0.00'} ha (${p._percentual_interseccao ? p._percentual_interseccao.toFixed(2) : '0.00'}%)</b><br>
+                        
+                                        <b>Ato de Criação:</b> ${p.criacaoato || p.CRIACAOATO || 'N/D'}
+                                    </div>`;
+                                }).join('') : 'Nenhuma unidade de conservação intersecta este CAR.')
+                            }
+                        </div>
+
+                        <!-- FLORESTAS PÚBLICAS DETALHADAS -->
+                        <div class="text-xs p-3 rounded border ${car.publicForestsQueryError ? 'bg-gray-100 border-gray-300 text-gray-500' : (car.intersectingPublicForests.length > 0 ? 'bg-red-50 border-red-200 text-red-900' : 'bg-green-50 border-green-200 text-green-800')}">
+                            <h6 class="font-bold uppercase mb-2">Florestas Públicas Intersectadas</h6>
+                            ${car.publicForestsQueryError ? 
+                                `<span class="font-bold"><i class="ph-warning"></i> Não foi possível consultar a base de Florestas Públicas.</span>` : 
+                                (car.intersectingPublicForests.length > 0 ? car.intersectingPublicForests.map(f => {
+                                    const p = f.properties || {};
+                                    return `<div class="mb-3 border-b border-green-200 pb-2 last:border-0 last:mb-0 last:pb-0">
+                                        <b>Nome:</b> ${p.nome || 'N/D'} <br>
+                                        <b>Categoria:</b> ${p.categoria || 'N/D'} <br>
+                                        <b>Governo:</b> ${p.governo || 'N/D'} <br>
+                                        <b>Tipo:</b> ${p.tipo || p._TIPO_ || 'N/D'} <br>
+                                        <b>Código CNFP:</b> ${p.codigo || p.cod_cnfp || 'N/D'} <br>
+                                        <b>Área Total da Floresta:</b> ${p.area_ha ? Number(p.area_ha).toFixed(2) : 'N/D'} ha<br>
+                                        <b style="color: #991b1b; background: #fee2e2; padding: 2px 4px; border-radius: 4px; display: inline-block; margin: 4px 0;">Área da Floresta dentro do CAR: ${p._area_interseccao_ha ? p._area_interseccao_ha.toFixed(2) : '0.00'} ha (${p._percentual_interseccao ? p._percentual_interseccao.toFixed(2) : '0.00'}%)</b><br>
+                                        <b>Município/UF:</b> ${p.municipio || 'N/D'} - ${p.uf || p._UF_ || 'N/D'}
+                                    </div>`;
+                                }).join('') : 'Nenhuma floresta pública intersecta este CAR.')
+                            }
+                        </div>
+
+                        <!-- MAPBIOMAS DETALHADO -->
+                        <div class="text-xs p-3 rounded border ${car.mapBiomasQueryError ? 'bg-gray-100 border-gray-300 text-gray-500' : (car.mapBiomasAlerts.length > 0 ? 'bg-red-50 border-red-200 text-red-900' : 'bg-green-50 border-green-200 text-green-800')}">
+                            <h6 class="font-bold uppercase mb-2">Alertas MapBiomas Intersectados</h6>
+                            ${car.mapBiomasQueryError ? 
+                                `<span class="font-bold"><i class="ph-warning"></i> Não foi possível consultar os alertas MapBiomas.</span>` : 
+                                (car.mapBiomasAlerts.length > 0 ? car.mapBiomasAlerts.map(mb => `
+                                    <div class="mb-3 border-b border-red-200 pb-2 last:border-0 last:mb-0 last:pb-0">
+                                        <b>Código do Alerta:</b> ${mb.alertCode}<br>
+                                        <b>Detectado em:</b> ${mb.detectedAt ? new Date(mb.detectedAt).toLocaleDateString('pt-BR') : 'N/D'}<br>
+        
+                                        <b>Área Total do Alerta:</b> ${mb.areaHa || 'N/D'} ha<br>
+                                        <b style="color: #991b1b; background: #fee2e2; padding: 2px 4px; border-radius: 4px; display: inline-block; margin: 4px 0;">Área do alerta dentro do CAR: ${mb._area_interseccao_ha ? mb._area_interseccao_ha.toFixed(2) : '0.00'} ha (${mb._percentual_interseccao ? mb._percentual_interseccao.toFixed(2) : '0.00'}%)</b><br>
+                                        <b>Fonte(s):</b> ${Array.isArray(mb.sources) ? mb.sources.join(', ') : (mb.sources || 'N/D')}<br>
+                                        <a href="https://plataforma.alerta.mapbiomas.org/alerta/${mb.alertCode}" target="_blank" class="text-blue-700 font-bold underline mt-1 inline-block">Acessar Laudo Oficial</a>
+                                    </div>
+                                `).join('') : 'Nenhum alerta MapBiomas intersecta este CAR.')
+                            }
+                        </div>
+
+                        <!-- IBAMA DETALHADO -->
+
+    <div class="text-xs p-3 rounded border ${car.ibamaQueryError ? 'bg-gray-100 border-gray-300 text-gray-500' : (car.ibamaEmbargos.length > 0 ? 'bg-purple-50 border-purple-200 text-purple-900' : 'bg-green-50 border-green-200 text-green-800')}">
+        <h6 class="font-bold uppercase mb-2">Embargos IBAMA Intersectados</h6>
+        ${car.ibamaQueryError ? 
+            `<span class="font-bold"><i class="ph-warning"></i> Não foi possível consultar a base do IBAMA.</span>` : 
+            (car.ibamaEmbargos.length > 0 ? car.ibamaEmbargos.map(ib => {
+                // Suporta se 'ib' for o objeto de propriedades diretamente ou a feature
+                const p = ib.properties || ib; 
+                let descricao = p.des_infracao || 'N/D';
+                return `
+                <div class="mb-3 border-b border-purple-200 pb-2 last:border-0 last:mb-0 last:pb-0">
+                    <b>Infrator:</b> ${p.nom_pessoa || 'N/D'} <br>
+                    <b>TAD:</b> ${p.numero_tad || 'N/D'} | <b>Data:</b> ${p.data_tad || 'N/D'} <br>
+                    <b>Área Total Embargada (IBAMA):</b> ${p.qtd_area_desmatada || '0'} ha<br>
+                    <b style="color: #6b21a8; background: #f3e8ff; padding: 2px 4px; border-radius: 4px; display: inline-block; margin: 4px 0;">Área do embargo dentro do CAR: ${p._area_interseccao_ha ? p._area_interseccao_ha.toFixed(2) : '0.00'} ha (${p._percentual_interseccao ? p._percentual_interseccao.toFixed(2) : '0.00'}%)</b><br>
+                    <b>Descrição:</b> <span style='white-space:pre-line;'>${descricao.substring(0,200)}...</span>
+                </div>`;
+            }).join('') : 'Nenhum embargo IBAMA identificado.')
+        }
+    </div>
                     </div>
-
-                    <!-- FLORESTAS PÚBLICAS DETALHADAS -->
-                    <div class="text-xs p-3 rounded border ${car.publicForestsQueryError ? 'bg-gray-100 border-gray-300 text-gray-500' : (car.intersectingPublicForests.length > 0 ? 'bg-red-50 border-red-200 text-red-900' : 'bg-green-50 border-green-200 text-green-800')}">
-                        <h6 class="font-bold uppercase mb-2">Florestas Públicas Intersectadas</h6>
-                        ${car.publicForestsQueryError ? 
-                            `<span class="font-bold"><i class="ph-warning"></i> Não foi possível consultar a base de Florestas Públicas.</span>` : 
-                            (car.intersectingPublicForests.length > 0 ? car.intersectingPublicForests.map(f => {
-                                const p = f.properties || {};
-                                return `<div class="mb-3 border-b border-green-200 pb-2 last:border-0 last:mb-0 last:pb-0">
-                                    <b>Nome:</b> ${p.nome || 'N/D'} <br>
-                                    <b>Categoria:</b> ${p.categoria || 'N/D'} <br>
-                                    <b>Governo:</b> ${p.governo || 'N/D'} <br>
-                                    <b>Tipo:</b> ${p.tipo || p._TIPO_ || 'N/D'} <br>
-                                    <b>Código CNFP:</b> ${p.codigo || p.cod_cnfp || 'N/D'} <br>
-                                    <b>Área (ha):</b> ${p.area_ha ? Number(p.area_ha).toFixed(2) : 'N/D'} <br>
-                                    <b>Município/UF:</b> ${p.municipio || 'N/D'} - ${p.uf || p._UF_ || 'N/D'}
-                                </div>`;
-                            }).join('') : 'Nenhuma floresta pública intersecta este CAR.')
-                        }
-                    </div>
-
-                    <!-- MAPBIOMAS DETALHADO -->
-                    <div class="text-xs p-3 rounded border ${car.mapBiomasQueryError ? 'bg-gray-100 border-gray-300 text-gray-500' : (car.mapBiomasAlerts.length > 0 ? 'bg-red-50 border-red-200 text-red-900' : 'bg-green-50 border-green-200 text-green-800')}">
-                        <h6 class="font-bold uppercase mb-2">Alertas MapBiomas Intersectados</h6>
-                        ${car.mapBiomasQueryError ? 
-                            `<span class="font-bold"><i class="ph-warning"></i> Não foi possível consultar os alertas MapBiomas.</span>` : 
-                            (car.mapBiomasAlerts.length > 0 ? car.mapBiomasAlerts.map(mb => `
-                                <div class="mb-3 border-b border-red-200 pb-2 last:border-0 last:mb-0 last:pb-0">
-                                    <b>Código do Alerta:</b> ${mb.alertCode}<br>
-                                    <b>Detectado em:</b> ${mb.detectedAt ? new Date(mb.detectedAt).toLocaleDateString('pt-BR') : 'N/D'}<br>
-                                    <b>Área (ha):</b> ${mb.areaHa}<br>
-                                    <b>Fonte(s):</b> ${Array.isArray(mb.sources) ? mb.sources.join(', ') : (mb.sources || 'N/D')}<br>
-                                    <a href="https://plataforma.alerta.mapbiomas.org/alerta/${mb.alertCode}" target="_blank" class="text-blue-700 font-bold underline mt-1 inline-block">Acessar Laudo Oficial</a>
-                                </div>
-                            `).join('') : 'Nenhum alerta MapBiomas intersecta este CAR.')
-                        }
-                    </div>
-
-                    <!-- IBAMA DETALHADO -->
-
-<div class="text-xs p-3 rounded border ${car.ibamaQueryError ? 'bg-gray-100 border-gray-300 text-gray-500' : (car.ibamaEmbargos.length > 0 ? 'bg-purple-50 border-purple-200 text-purple-900' : 'bg-green-50 border-green-200 text-green-800')}">
-    <h6 class="font-bold uppercase mb-2">Embargos IBAMA Intersectados</h6>
-    ${car.ibamaQueryError ? 
-        `<span class="font-bold"><i class="ph-warning"></i> Não foi possível consultar a base do IBAMA.</span>` : 
-        (car.ibamaEmbargos.length > 0 ? car.ibamaEmbargos.map(ib => {
-            // Suporta se 'ib' for o objeto de propriedades diretamente ou a feature
-            const p = ib.properties || ib; 
-            let descricao = p.des_infracao || 'N/D';
-            return `
-            <div class="mb-3 border-b border-purple-200 pb-2 last:border-0 last:mb-0 last:pb-0">
-                <b>Infrator:</b> ${p.nom_pessoa || 'N/D'} <br>
-                <b>TAD:</b> ${p.numero_tad || 'N/D'} | <b>Data:</b> ${p.data_tad || 'N/D'} <br>
-                <b>Área Desmatada:</b> ${p.qtd_area_desmatada || '0'} <br>
-                <b>Descrição:</b> <span style='white-space:pre-line;'>${descricao.substring(0,200)}...</span>
+                </div>
             </div>`;
-        }).join('') : 'Nenhum embargo IBAMA identificado.')
-    }
-</div>
-                </div>
-            </div>
-        </div>`;
-    });
+        });
 
-    html += `</div>`;
-    container.innerHTML = html;
-}
+        html += `</div>`;
+        container.innerHTML = html;
+    }
     function closeRelatorioModal() {
         document.getElementById('relatorioModal').style.display = 'none';
         // Reinicia para a aba Resumo ao fechar
@@ -4247,6 +4045,7 @@ async function exportReportPDF() {
         const pageHeight = doc.internal.pageSize.getHeight();
         const margin = 15;
         const dateTime = new Date().toLocaleString('pt-BR');
+        const bottomReserve = 18; // mm reservados (paginação + folga)
         
         let currentY = 20;
 
@@ -4260,7 +4059,7 @@ async function exportReportPDF() {
         };
 
         const checkPageBreak = (neededSpace) => {
-            if (currentY + neededSpace > pageHeight - 20) {
+            if (currentY + neededSpace > pageHeight - bottomReserve) {
                 doc.addPage();
                 drawHeader();
                 currentY = 28; 
@@ -4339,20 +4138,36 @@ async function exportReportPDF() {
         }
 
         // Função de Linha Única para Dados Base (Área do imóvel, etc)
-        const writeLine = (label, value, isAlert = false) => {
-            doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(100);
-            doc.text(label, margin + 2, currentY);
-            
-            const labelWidth = doc.getTextWidth(label) + 1;
-            
-            doc.setFont("helvetica", "normal");
-            if (isAlert) doc.setTextColor(220, 38, 38); 
-            else doc.setTextColor(60);
-            
-            const splitVal = doc.splitTextToSize(String(value), pageWidth - margin*2 - labelWidth - 5);
-            doc.text(splitVal, margin + 2 + labelWidth, currentY);
-            currentY += (splitVal.length * 5.5);
-        };
+const writeLine = (label, value, isAlert = false) => {
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(100);
+
+  const labelWidth = doc.getTextWidth(label) + 1;
+
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(isAlert ? 220 : 60, isAlert ? 38 : 60, isAlert ? 38 : 60);
+
+  const splitVal = doc.splitTextToSize(
+    String(value),
+    pageWidth - margin * 2 - labelWidth - 5
+  );
+
+  const needed = (splitVal.length * 5.5) + 2;
+  checkPageBreak(needed); // ✅ checa ANTES de desenhar
+
+  // imprime uma única vez
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(100);
+  doc.text(label, margin + 2, currentY);
+
+  doc.setFont("helvetica", "normal");
+  if (isAlert) doc.setTextColor(220, 38, 38);
+  else doc.setTextColor(60);
+
+  doc.text(splitVal, margin + 2 + labelWidth, currentY);
+  currentY += (splitVal.length * 5.5);
+};
 
         // Função de Bloco Colorido Dinâmico (Listas Verticais para UC, FP, etc)
 // Função de Bloco Colorido Dinâmico (Listas Verticais para UC, FP, etc)
@@ -4450,6 +4265,12 @@ const drawDynamicBox = (title, items, emptyMsg, colors) => {
 };
 
 
+const pdfColorRed    = { bg: [254, 242, 242], border: [254, 202, 202], title: [0, 0, 0], text: [0, 0, 0] };
+const pdfColorOrange = { bg: [255, 247, 237], border: [254, 235, 200], title: [0, 0, 0], text: [0, 0, 0] };
+const pdfColorGreen  = { bg: [240, 253, 244], border: [187, 247, 208], title: [0, 0, 0], text: [0, 0, 0] };
+const pdfColorGray   = { bg: [249, 250, 251], border: [229, 231, 235], title: [0, 0, 0], text: [0, 0, 0] };
+const pdfColorPurple = { bg: [243, 232, 255], border: [233, 213, 255], title: [0, 0, 0], text: [0, 0, 0] };
+
         // LOOP DOS CARS
         for (let i = 0; i < metrics.carMetrics.length; i++) {
             const car = metrics.carMetrics[i];
@@ -4494,61 +4315,97 @@ const drawDynamicBox = (title, items, emptyMsg, colors) => {
 
             
             checkPageBreak(25);
-            doc.setFontSize(11); doc.setTextColor(40); doc.setFont("helvetica", "bold");
-            doc.text("Análise Ambiental Detalhada", margin, currentY); currentY += 6;
+            doc.setFontSize(11);
+            doc.setTextColor(40);
+            doc.setFont("helvetica", "bold");
+            doc.text("Análise Ambiental Detalhada", margin, currentY);
+            currentY += 6;
 
-            if (car.deforestationArea > 0) {
-                let anosTxt = (car.anos && car.anos.length > 0) ? car.anos.join(', ') : 'N/D';
-                let modFisc = Number(props.modulos_fiscais || props.m_fiscal || 0);
-                checkPageBreak(25);
-                doc.setFillColor(255, 247, 237); doc.setDrawColor(251, 146, 60);
-                doc.rect(margin, currentY, pageWidth - (margin*2), 16, 'FD');
-                doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(154, 52, 18);
-                doc.text(`Supressão detectada (PRODES) no(s) ano(s): ${anosTxt}`, margin + 5, currentY + 6);
-                if (modFisc > 0 && modFisc < 4) {
-                    doc.setTextColor(185, 28, 28);
-                    doc.text(`Imóvel com ${modFisc.toFixed(2)} módulos fiscais: operação não será objeto de análise Prodes até 04/01/2027.`, margin + 5, currentY + 11);
+// =======================
+// PRODES (PADRÃO drawDynamicBox) — VERMELHO IGUAL MAPBIOMAS
+// =======================
+
+
+            const prodesItems = [];
+            const prodesQueryError = (car.prodesConsultaOk === false && !car.properties?.fallbackNetworkSuccess);
+
+                if (prodesQueryError) {
+            prodesItems.push([{ l: "STATUS:", v: "Não foi possível consultar a base PRODES." }]);
+                } else if (car.deforestationArea > 0) {
+            const bioma = car.biomaAnalise || car.prodesData?.bioma || 'N/D';
+            const defArea = Number(car.deforestationArea || 0);
+            const soma = Number(car.somaDesmatamentoAnalise || car.prodesData?.soma_desmat || 0);
+            const carArea = Number(car.area || 0);
+            const pctCar = (carArea > 0) ? ((defArea / carArea) * 100) : 0;
+
+            const dentro = (car.prodesData?.dentro_criterio ?? car.prodesData?.dentro_tolerancia ?? 'N/D');
+            const julg = (car.prodesData?.julg_status || 'N/D');
+
+            prodesItems.push([
+                { l: "Bioma:", v: bioma },
+                { l: "Supressão (19-25):", v: `${defArea.toFixed(2)} ha` },
+                { l: "Soma Desmatamento:", v: `${soma.toFixed(2)} ha` },
+                { l: "Área dentro do CAR:", v: `${defArea.toFixed(2)} ha (${pctCar.toFixed(2)}%)` },
+                { l: "Dentro do Critério:", v: dentro },
+                { l: "Julgamento PRODES:", v: julg }
+            ]);
+
+                const areaPorAnoObj = (car.areaPorAno && typeof car.areaPorAno === 'object') ? car.areaPorAno : {};
+                const anos = Object.entries(areaPorAnoObj)
+                .sort((a, b) => Number(a[0]) - Number(b[0]))
+                .filter(([_, area]) => Number(area) > 0);
+
+                if (anos.length > 0) {
+      // frase antes dos anos
+                prodesItems.push([{ l: "DETALHAMENTO POR ANO:", v: "" }]);
                 }
-                currentY += 22;
+
+                anos.forEach(([ano, area]) => {
+                const areaHa = Number(area) || 0;
+                const percAnoCar = (carArea > 0) ? (areaHa / carArea * 100) : 0;
+
+                prodesItems.push([
+                { l: `PRODES ${ano} — Área Total:`, v: `${areaHa.toFixed(4)} ha` },
+                { l: "Área dentro do CAR:", v: `${areaHa.toFixed(2)} ha (${percAnoCar.toFixed(2)}%)` }
+                ]);
+            });
+
+                if (car.prodesEdgeOnly) {
+                prodesItems.push([{ l: "Nota PRODES:", v: "Conforme NT Inpe, a sobreposição < 60m pode ser desconsiderada." }]);
+                }
             }
+                let prodesStyle = pdfColorGreen;
+                if (prodesQueryError) prodesStyle = pdfColorGray;
+                else if (car.deforestationArea > 0) prodesStyle = pdfColorRed;
+
+                drawDynamicBox(
+                "Análise Ambiental PRODES",
+                    prodesItems,
+                    "Nenhuma supressão PRODES identificada (2019-2025).",
+                    prodesStyle
+                    );
+        
 
 
-            writeLine("Bioma Predominante:", `${car.biomaAnalise || car.prodesData?.bioma || 'N/D'}`);
-            writeLine("Supressão PRODES (19-25):", `${(car.deforestationArea || 0).toFixed(2)} ha`, car.deforestationArea > 0);
-
-            // --- DETALHAMENTO POR ANO (UNIFICADO) ---
-            if (car.areaPorAno) {
-                Object.entries(car.areaPorAno)
-                    .sort((a, b) => a[0] - b[0])
-                    .forEach(([ano, area]) => {
-                        if (parseFloat(area) > 0) {
-                            writeLine(`      > PRODES ${ano}:`, `${parseFloat(area).toFixed(4)} ha`, true);
-                        }
-                    });
-            }
-
-            if (car.prodesEdgeOnly) {
-                writeLine("Nota PRODES:", "Conforme NT Inpe, a sobreposição < 60m pode ser desconsiderada.", true);
-            }
-            writeLine("Soma Desmatamento:", `${car.somaDesmatamentoAnalise || car.prodesData?.soma_desmat || 'N/D'}`);
-            writeLine("Dentro do Critério:", `${car.prodesData?.dentro_criterio || car.prodesData?.dentro_tolerancia || 'N/D'}`);
-            writeLine("Critério Aplicado:", `${car.prodesData?.criterio_aplicado || car.prodesData?.tolerancia_aplicada || 'N/D'}`);
-            writeLine("Status Julg. PRODES:", `${car.prodesData?.julg_status || 'N/D'}`);
-            currentY += 4;
+                currentY += 2; // respiro opcional
 
             // PREPARA OS DADOS DOS BLOCOS (UC, FP, MAPBIOMAS, IBAMA)
-	    const ucItems = [];
+	const ucItems = [];
             if (car.ucQueryError) {
                 ucItems.push([{ l: "STATUS:", v: "Não foi possível consultar a base de UCs." }]);
             } else if (car.intersectingUCs && car.intersectingUCs.length > 0) {
                 car.intersectingUCs.forEach(uc => {
                     const p = uc.properties || {};
+                    const areaIn = p._area_interseccao_ha ? p._area_interseccao_ha.toFixed(2) : '0.00';
+                    const pctIn = p._percentual_interseccao ? p._percentual_interseccao.toFixed(2) : '0.00';
                     ucItems.push([
                         { l: "Nome:", v: p.nomeuc || p.NOMEUC || p.nome || 'N/D' },
                         { l: "Categoria:", v: p.siglacateg || p.SIGLACATEG || 'N/D' },
                         { l: "Esfera Admin:", v: p.esferaadm || p.ESFERAADM || 'N/D' },
                         { l: "Ano Criação:", v: p.criacaoano || p.CRIACAOANO || 'N/D' },
-                        { l: "Área (ha):", v: p.areahaalb ? Number(p.areahaalb).toFixed(2) : 'N/D' },
+            
+                        { l: "Área Total da UC:", v: p.areahaalb ? `${Number(p.areahaalb).toFixed(2)} ha` : 'N/D' },
+                        { l: "Área dentro do CAR:", v: `${areaIn} ha (${pctIn}%)` }, // <--- NOVO
                         { l: "Ato de Criação:", v: p.criacaoato || p.CRIACAOATO || 'N/D' }
                     ]);
                 });
@@ -4560,13 +4417,17 @@ const drawDynamicBox = (title, items, emptyMsg, colors) => {
             } else if (car.intersectingPublicForests && car.intersectingPublicForests.length > 0) {
                 car.intersectingPublicForests.forEach(f => {
                     const p = f.properties || {};
+                    const areaIn = p._area_interseccao_ha ? p._area_interseccao_ha.toFixed(2) : '0.00';
+                    const pctIn = p._percentual_interseccao ? p._percentual_interseccao.toFixed(2) : '0.00';
                     fpItems.push([
                         { l: "Nome:", v: p.nome || 'N/D' },
                         { l: "Categoria:", v: p.categoria || 'N/D' },
                         { l: "Governo:", v: p.governo || 'N/D' },
                         { l: "Tipo:", v: p.tipo || p._TIPO_ || 'N/D' },
                         { l: "Código CNFP:", v: p.codigo || p.cod_cnfp || 'N/D' },
-                        { l: "Área (ha):", v: p.area_ha ? Number(p.area_ha).toFixed(2) : 'N/D' },
+                        { l: "Área Total Floresta:", v: p.area_ha ? `${Number(p.area_ha).toFixed(2)} ha` : 'N/D' },
+                        { l: "Área dentro do CAR:", v: `${areaIn} ha (${pctIn}%)` }, // <--- NOVO
+                
                         { l: "Município/UF:", v: `${p.municipio || 'N/D'} - ${p.uf || p._UF_ || 'N/D'}` }
                     ]);
                 });
@@ -4578,12 +4439,16 @@ const drawDynamicBox = (title, items, emptyMsg, colors) => {
                 car.mapBiomasAlerts.forEach(mb => {
                     const dt = mb.detectedAt ? new Date(mb.detectedAt).toLocaleDateString('pt-BR') : 'N/D';
                     const pub = mb.publishedAt ? new Date(mb.publishedAt).toLocaleDateString('pt-BR') : 'N/D';
-
+                    // Pega os valores calculados salvos em memória
+                    const areaIn = mb._area_interseccao_ha ? mb._area_interseccao_ha.toFixed(2) : '0.00';
+                    const pctIn = mb._percentual_interseccao ? mb._percentual_interseccao.toFixed(2) : '0.00';
                     mbItems.push([
                         { l: "Código do Alerta:", v: mb.alertCode || 'N/D' },
                         { l: "Detectado em:", v: dt },
                         { l: "Publicado em:", v: pub },
-                        { l: "Área (ha):", v: mb.areaHa || 'N/D' },
+                    
+                        { l: "Área Total do Alerta:", v: `${mb.areaHa || 'N/D'} ha` },
+                        { l: "Área dentro do CAR:", v: `${areaIn} ha (${pctIn}%)` }, // <--- NOVO
                         { l: "Fonte(s):", v: Array.isArray(mb.sources) ? mb.sources.join(', ') : (mb.sources || 'N/D') },
                         { l: "Link:", v: "Acessar Laudo Oficial", url: `https://plataforma.alerta.mapbiomas.org/alerta/${mb.alertCode}` }
                     ]);
@@ -4594,11 +4459,13 @@ const drawDynamicBox = (title, items, emptyMsg, colors) => {
                 ibamaItems.push([{ l: "STATUS:", v: "Não foi possível consultar a base do IBAMA." }]);
             } else if (car.ibamaEmbargos && car.ibamaEmbargos.length > 0) {
                 car.ibamaEmbargos.forEach(ib => {
-        const p = ib.properties || ib; // Garante pegar as propriedades corretamente
-        let descricao = p.des_infracao || 'N/D';
+            const p = ib.properties || ib; // Garante pegar as propriedades corretamente
+            let descricao = p.des_infracao || 'N/D';
         descricao = descricao.replace(/\r\n|\r|\n/g, ' '); 
-        const infratorMasked = maskName(p.nom_pessoa);
-        
+            const infratorMasked = maskName(p.nom_pessoa);
+        // Pega os valores calculados salvos em memória
+            const areaIn = p._area_interseccao_ha ? p._area_interseccao_ha.toFixed(2) : '0.00';
+            const pctIn = p._percentual_interseccao ? p._percentual_interseccao.toFixed(2) : '0.00';
         ibamaItems.push([
             { l: "Infrator:", v: infratorMasked },
             { l: "CPF/CNPJ:", v: maskedCpf },
@@ -4606,7 +4473,9 @@ const drawDynamicBox = (title, items, emptyMsg, colors) => {
             { l: "Processo TAD:", v: p.processo_tad || 'N/D' },
             { l: "Data TAD:", v: p.data_tad || 'N/D' },
             { l: "Município/UF:", v: `${p.nom_municipio || 'N/D'} - ${p.sig_uf || 'N/D'}` },
-            { l: "Área Desmatada:", v: p.qtd_area_desmatada || 'N/D' },
+            { l: "Área Total Embargada:", v: `${p.qtd_area_desmatada || '0'} ha` },
+            { l: "Área dentro do CAR:", v: `${areaIn} ha (${pctIn}%)` }, // <--- NOVO
+                        // { l: "Área Desmatada:", v: p.qtd_area_desmatada || 'N/D' },
             { l: "Situação Embargo:", v: p.sit_embarga_poligono || 'N/D' },
             { l: "Órgão:", v: p.orgao || 'N/D' },
             { l: "Descrição Infração:", v: descricao }
@@ -4614,39 +4483,35 @@ const drawDynamicBox = (title, items, emptyMsg, colors) => {
     });
 }
 
-        // CORES ESTABELECIDAS PELO USUÁRIO
-  
-const pdfColorRed    = { bg: [254, 242, 242], border: [254, 202, 202], title: [0, 0, 0], text: [0, 0, 0] };
-const pdfColorOrange = { bg: [255, 247, 237], border: [254, 235, 200], title: [0, 0, 0], text: [0, 0, 0] };
-const pdfColorGreen  = { bg: [240, 253, 244], border: [187, 247, 208], title: [0, 0, 0], text: [0, 0, 0] };
-const pdfColorGray   = { bg: [249, 250, 251], border: [229, 231, 235], title: [0, 0, 0], text: [0, 0, 0] };
-const pdfColorPurple = { bg: [243, 232, 255], border: [233, 213, 255], title: [0, 0, 0], text: [0, 0, 0] };
-            // Bloco UC
-            let ucStyle = pdfColorGreen; 
-            if (car.ucQueryError) ucStyle = pdfColorGray;
-            else if (car.intersectingUCs && car.intersectingUCs.length > 0) ucStyle = pdfColorRed;
-            drawDynamicBox("Sobreposição UC", ucItems, "Nenhuma unidade de conservação intersecta este CAR.", ucStyle);
+            // CORES ESTABELECIDAS PELO USUÁRIO
+    
+               // Bloco UC
+                let ucStyle = pdfColorGreen; 
+                if (car.ucQueryError) ucStyle = pdfColorGray;
+                else if (car.intersectingUCs && car.intersectingUCs.length > 0) ucStyle = pdfColorRed;
+                drawDynamicBox("Sobreposição UC", ucItems, "Nenhuma unidade de conservação intersecta este CAR.", ucStyle);
 
-            // Bloco Florestas Públicas
-            let fpStyle = pdfColorGreen;
-            if (car.publicForestsQueryError) fpStyle = pdfColorGray;
-            else if (car.intersectingPublicForests && car.intersectingPublicForests.length > 0) fpStyle = pdfColorRed;
-            drawDynamicBox("Florestas Públicas Intersectadas", fpItems, "Nenhuma floresta pública intersecta este CAR.", fpStyle);
+                // Bloco Florestas Públicas
+                let fpStyle = pdfColorGreen;
+                if (car.publicForestsQueryError) fpStyle = pdfColorGray;
+                else if (car.intersectingPublicForests && car.intersectingPublicForests.length > 0) fpStyle = pdfColorRed;
+                drawDynamicBox("Florestas Públicas Intersectadas", fpItems, "Nenhuma floresta pública intersecta este CAR.", fpStyle);
 
-            // Bloco MapBiomas
-            let mbStyle = pdfColorGreen;
-            if (car.mapBiomasQueryError) mbStyle = pdfColorGray;
-            else if (car.mapBiomasAlerts && car.mapBiomasAlerts.length > 0) mbStyle = pdfColorRed;
-            drawDynamicBox("Alertas MapBiomas Intersectados", mbItems, "Nenhum alerta MapBiomas intersecta este CAR.", mbStyle);
+                // Bloco MapBiomas
+                let mbStyle = pdfColorGreen;
+                if (car.mapBiomasQueryError) mbStyle = pdfColorGray;
+                else if (car.mapBiomasAlerts && car.mapBiomasAlerts.length > 0) mbStyle = pdfColorRed;
+                drawDynamicBox("Alertas MapBiomas Intersectados", mbItems, "Nenhum alerta MapBiomas intersecta este CAR.", mbStyle);
 
-            // Bloco IBAMA
-            if (i === 0) {
-                let ibamaStyle = pdfColorGreen;
-                if (car.ibamaQueryError) ibamaStyle = pdfColorGray;
-                else if (car.ibamaEmbargos && car.ibamaEmbargos.length > 0) ibamaStyle = pdfColorPurple;
-                drawDynamicBox("Embargos IBAMA Intersectados", ibamaItems, "Nenhum embargo IBAMA identificado.", ibamaStyle);
+                // Bloco IBAMA
+                if (i === 0) {
+                    let ibamaStyle = pdfColorGreen;
+                    if (car.ibamaQueryError) ibamaStyle = pdfColorGray;
+                    else if (car.ibamaEmbargos && car.ibamaEmbargos.length > 0) ibamaStyle = pdfColorPurple;
+                    drawDynamicBox("Embargos IBAMA Intersectados", ibamaItems, "Nenhum embargo IBAMA identificado.", ibamaStyle);
+                }
             }
-         }
+                
         // =========================================================
         // --- LINHA DO TEMPO (TAMANHO DE FONTE IGUAL AO RESTO) ---
         // =========================================================
@@ -9871,25 +9736,47 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('top-message-container').innerHTML = '';
         }, 5000);
     }
+document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn-confirm-car');
+    if (!btn) return;
 
+    const carCode = btn.dataset.carCode;
+    if (!carCode) return;
+
+    confirmAndLoadCar(carCode);
+});
+document.addEventListener('click', (e) => {
+    const discardBtn = e.target.closest('.btn-discard-car');
+    if (!discardBtn) return;
+
+    const carCode = discardBtn.dataset.carCode;
+    if (!carCode) return;
+
+    discardCandidateCar(carCode);
+});
   </script>
-<footer class="max-w-[1200px] mx-auto px-4 py-12 mt-8 border-t border-gray-200">
-    <div class="flex flex-col md:flex-row justify-between items-center gap-4">
-        
-        <!-- Lado Esquerdo -->
-        <div class="flex items-center">
-            <span class="brde-logo-green text-xl">BRDE</span>
-            <div class="vertical-divider"></div>
-            <span class="footer-text-shared">Banco Regional de Desenvolvimento do Extremo Sul</span>
-        </div>
+<footerclass="max-w-[1200px] mx-auto px-4 py-12 mt-8 border-t border-gray-200">
+  <div class="flex flex-col md:flex-row items-center gap-4">
 
-        <!-- Lado Direito (Exatamente igual ao esquerdo) -->
-        <div class="text-center md:text-right footer-text-shared">
-            <p>© 2026 Todos os direitos reservados BRDE</p>
-            <p>Sistema de Validação Geoespacial e Análise Ambiental</p>
-        </div>
-
+    <!-- Lado Esquerdo -->
+    <div class="flex items-center flex-1 justify-center md:justify-start">
+      <span class="brde-logo-green text-xl">BRDE</span>
+      <div class="vertical-divider"></div>
+      <span class="footer-text-shared">
+        Sistema de Validação Geoespacial e Análise Ambiental
+      </span>
     </div>
-</footer></footer>
+
+    <!-- Lado Direito -->
+    <div class="flex-1 text-center md:text-right footer-text-shared">
+        <div style="max-width: 480px; margin-left: auto;">
+      <p> </p>
+    </div>
+    </div>
+
+  </div>
+</footer>
 </body>
 </html>
+
+
