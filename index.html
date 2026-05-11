@@ -268,44 +268,54 @@ async function fetchIbamaEmbargosByBbox(bboxParam) {
     const alloriginsUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(directUrl)}`;
     // URLs de fallback
     const localIbamaUrl = './ibama.json';
-    const remoteIbamaUrl = 'https://validadorbrde.powerappsportals.com/Validador/ibama.json';
+    const remoteIbamaUrl = 'https://validadorglebas.powerappsportals.com/GeoValidaBRDE/ibama.json';
     let lastError = null;
 
     // Função interna para processar resposta e adicionar ao mapa
-    async function processGeojsonResponse(response) {
+    async function processGeojsonResponse(response, bboxParam) {
         if (!response) return [];
         let geojson = { ...response };
-        
         // Limpeza de CRS para evitar conflitos no Leaflet
         if (geojson.crs) delete geojson.crs;
-        
+
+        // Se for consulta local/remota, filtra pelo bbox
+        if (geojson.features && geojson.features.length > 0 && bboxParam) {
+            // bboxParam: "minX,minY,maxX,maxY,EPSG:4326"
+            const bboxArr = bboxParam.split(',').map(Number);
+            // Cria um polígono bbox
+            const bboxPoly = turf.bboxPolygon([bboxArr[0], bboxArr[1], bboxArr[2], bboxArr[3]]);
+            // Filtra features que intersectam o bbox
+            geojson.features = geojson.features.filter(f => {
+                if (!f.geometry) return false;
+                try {
+                    return turf.booleanIntersects(f, bboxPoly);
+                } catch (e) {
+                    return false;
+                }
+            });
+        }
+
         if (geojson.features && geojson.features.length > 0) {
             window.ibamaQueryError = false;
             console.log('[IBAMA] GeoJSON retornado:', geojson.features.length, 'features found.');
-            
             // Limpa camadas anteriores do mapa
             if (typeof ibamaLayers !== 'undefined') {
                 ibamaLayers.forEach(l => { if (map.hasLayer(l)) map.removeLayer(l); });
                 ibamaLayers = [];
             }
-
             // Atualiza a variável global usada pelo PDF e Mapa
             window.allIbamaEmbargos = geojson.features;
             window.ibamaQueryError = false; // Sinaliza sucesso
-
             const layer = L.geoJSON(geojson, {
                 onEachFeature: function (feature, layer) {
                     layer.bindPopup('<b>Embargo IBAMA</b>');
                 },
                 style: { color: '#ff6600', weight: 2, fillOpacity: 0.2 }
             });
-            
             ibamaLayers.push(layer);
             layer.addTo(map);
-
             if (typeof addLayerControl === 'function') addLayerControl();
             if (typeof updateLegend === 'function') updateLegend();
-            
             return geojson.features;
         } else {
             console.log('[IBAMA] Nenhuma feature encontrada no bbox.');
@@ -321,7 +331,7 @@ async function fetchIbamaEmbargosByBbox(bboxParam) {
         const resp = await fetch(directUrl);
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const response = await resp.json();
-        return await processGeojsonResponse(response);
+        return await processGeojsonResponse(response, bboxParam);
     } catch (err1) {
         lastError = err1;
         console.warn('Falha na requisição direta ao IBAMA, tentando via allorigins:', err1);
@@ -331,7 +341,7 @@ async function fetchIbamaEmbargosByBbox(bboxParam) {
             const resp2 = await fetch(alloriginsUrl);
             if (!resp2.ok) throw new Error('HTTP ' + resp2.status);
             const response2 = await resp2.json();
-            return await processGeojsonResponse(response2);
+            return await processGeojsonResponse(response2, bboxParam);
         } catch (err2) {
             lastError = err2;
             console.warn('Erro ao buscar embargos IBAMA via allorigins, tentando fallback local:', err2);
@@ -343,7 +353,7 @@ async function fetchIbamaEmbargosByBbox(bboxParam) {
                 if (respLocal.ok) {
                     responseLocal = await respLocal.json();
                     if (responseLocal && responseLocal.features) {
-                        return await processGeojsonResponse(responseLocal);
+                        return await processGeojsonResponse(responseLocal, bboxParam);
                     }
                 }
                 throw new Error('ibama.json local não disponível');
@@ -356,7 +366,7 @@ async function fetchIbamaEmbargosByBbox(bboxParam) {
                     if (respRemote.ok) {
                         let responseRemote = await respRemote.json();
                         if (responseRemote && responseRemote.features) {
-                            return await processGeojsonResponse(responseRemote);
+                            return await processGeojsonResponse(responseRemote, bboxParam);
                         }
                     }
                     throw new Error('ibama.json remoto não disponível');
