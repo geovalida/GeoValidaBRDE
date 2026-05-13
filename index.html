@@ -9281,12 +9281,17 @@ document.getElementById('apply-correction-btn').addEventListener('click', async 
             }
 
 
-            carLayers.push(newLayer); 
+carLayers.push(newLayer); 
             carFileNames.push(f.name);
-            if (typeof carFeatureGroup !== 'undefined') carFeatureGroup.bringToBack();
+            
+            // CORREÇÃO: Adiciona a camada visualmente no mapa e no grupo de features
+            newLayer.addTo(map);
+            if (typeof carFeatureGroup !== 'undefined') {
+                carFeatureGroup.addLayer(newLayer);
+                carFeatureGroup.bringToBack();
+            }
 
             logEvento(f.name, 'carregamento', 'info', 'LOAD_CAR_OK', `Arquivo CAR "${f.name}" carregado.`);
-            resolve();
         };
 
         if (ext === 'kml' || f.name.toLowerCase().endsWith('.kmz')) {
@@ -9380,9 +9385,13 @@ document.getElementById('apply-correction-btn').addEventListener('click', async 
             document.getElementById('top-message-container').innerHTML = 
                 `<div class="error rounded-lg">AVISO: Nenhum CAR válido foi carregado.</div>`;
         }
-        updateUnifiedCarListUI();
+updateUnifiedCarListUI();
         updateStatusPanel();
         validateAll(true); 
+        
+        // CORREÇÃO: Atualiza o menu superior direito e a legenda para o arquivo recém-carregado
+        if (typeof addLayerControl === 'function') addLayerControl();
+        if (typeof updateLegend === 'function') updateLegend();
     }
    
     document.getElementById('upload-car-btn').addEventListener('click', ()=>{
