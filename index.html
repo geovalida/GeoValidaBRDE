@@ -5548,16 +5548,15 @@ async function removeSingleCar(carCode) {
     const superClean = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     const target = superClean(carCode);
 
-    // 1. Identificar o índice nos arrays globais
+    // 1. Identificar os índices em TODAS as listas (de códigos e de arquivos)
     const idx = carCodes.findIndex(c => superClean(c) === target);
+    const fileIdx = carFileNames.findIndex(f => superClean(f).includes(target));
 
-    // 2. REMOÇÃO DO MAPA (Lógica de Varredura de Segurança)
-    // Primeiro tenta pelo array de camadas
-    if (idx > -1 && carCodeLayers[idx]) {
-        map.removeLayer(carCodeLayers[idx]);
-    }
+    // 2. REMOÇÃO DO MAPA FISICAMENTE
+    if (idx > -1 && carCodeLayers[idx]) map.removeLayer(carCodeLayers[idx]);
+    if (fileIdx > -1 && carLayers[fileIdx]) map.removeLayer(carLayers[fileIdx]);
 
-    // Varredura extra: Percorre TODAS as camadas do mapa procurando o código no conteúdo
+    // Varredura de Segurança: Remove qualquer polígono que tenha esse código no balão
     map.eachLayer((layer) => {
         if (layer instanceof L.GeoJSON || layer instanceof L.Polygon) {
             const popup = layer.getPopup();
@@ -5568,25 +5567,31 @@ async function removeSingleCar(carCode) {
         }
     });
 
+    // 3. LIMPEZA DA MEMÓRIA
     if (idx > -1) {
         const codigoRemovido = carCodes[idx];
-
-        // 3. Remover dos arrays sincronizados
         carCodes.splice(idx, 1);
         carCodeLayers.splice(idx, 1);
         carCodeFeatures.splice(idx, 1);
         carProperties.splice(idx, 1);
 
-        // 4. Remover da lista de metadados do relatório
         const metaIdx = relatorio.meta.arquivos.car.indexOf(codigoRemovido);
         if (metaIdx > -1) relatorio.meta.arquivos.car.splice(metaIdx, 1);
+    }
 
-        // 5. Atualizar Interface e Legenda
+    if (fileIdx > -1) {
+        carFileNames.splice(fileIdx, 1);
+        carLayers.splice(fileIdx, 1);
+    }
+
+    if (idx > -1 || fileIdx > -1) {
+        // 4. Atualizar Interface e Menus
         updateUnifiedCarListUI();
         addLayerControl();
         updateLegend();
+        updateClearButtonsVisibility();
         
-        // 6. Atualizar Análise Ambiental
+        // 5. Atualizar Análise Ambiental
         if (carCodes.length > 0) {
             await triggerBackgroundEnvironmentalAnalysis();
         } else {
@@ -5594,21 +5599,18 @@ async function removeSingleCar(carCode) {
             const btnRel = document.getElementById('btnRelatorio');
             if (btnRel) {
                 btnRel.disabled = true;
-                btnRel.classList.add('opacity-50');
+                btnRel.classList.add('opacity-50', 'cursor-not-allowed');
             }
         }
 
-        // 7. Feedback e Validação
+        // 6. Feedback Visual
         document.getElementById('top-message-container').innerHTML = 
             `<div class="success-message"><i class="ph-trash"></i> Imóvel removido do mapa e da análise.</div>`;
         setTimeout(() => { document.getElementById('top-message-container').innerHTML = ''; }, 3000);
         
-        validateAll(); // Força o recálculo da área no painel
-
+        validateAll(); // Força o recálculo do painel e libera o modal de correções
     } else {
-        // Se cair aqui, o sistema limpa o mapa por precaução mas avisa o usuário
-        console.warn("CAR não achado no índice. Executando limpeza de emergência...");
-        alert("O imóvel foi removido visualmente. Caso o erro persista, utilize o botão 'Limpar CARs'.");
+        alert("O imóvel foi removido visualmente, mas não foi localizado na memória. Caso o erro persista, utilize o botão 'Limpar CAR(s)'.");
     }
 }
 window.removeSingleCar = removeSingleCar;
