@@ -1114,10 +1114,13 @@ class="p-2 border border-gray-300 rounded-md bg-white placeholder-muted"></texta
     </div> Análise Ambiental -->
 
     <!-- Modal de Correção de Fechamento -->
+   <!-- Modal de Correção de Fechamento -->
     <div id="correction-modal" class="modal-overlay">
-        <div class="modal-content" style="position: relative; padding: 0 !important;">
-            <!-- Header fixo completo do Modal de Correção -->
-            <div style="position: sticky; top: 0; background: white; z-index: 100; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <!-- Alteração: Adicionado flexbox, max-height e tamanho limitador -->
+        <div class="modal-content" style="position: relative; padding: 0 !important; display: flex; flex-direction: column; max-height: 90vh; width: 95%; max-width: 800px;">
+            
+            <!-- Header fixo do Modal (flex-shrink: 0 garante que não vai amassar) -->
+            <div style="background: white; z-index: 100; box-shadow: 0 2px 4px rgba(0,0,0,0.1); flex-shrink: 0; border-radius: 8px 8px 0 0;">
                 <header class="report-header" style="display: flex; justify-content: space-between; align-items: center; padding-right: 0.75rem;">
                     <div class="flex items-center">
                         <i class="ph-warning-octagon text-2xl mr-2 text-yellow-600"></i>
@@ -1135,10 +1138,11 @@ class="p-2 border border-gray-300 rounded-md bg-white placeholder-muted"></texta
                 </div>
             </div>
             
-            <!--Container para detalhes específicos da correção (Fechamento ou Clipping) -->
-            <div id="correction-details" class="mb-4 space-y-2" style="padding: 20px 25px;"></div>
+            <!-- Container das correções (A BARRA DE ROLAGEM ACONTECE AQUI: overflow-y: auto) -->
+            <div id="correction-details" class="space-y-2 custom-scrollbar" style="padding: 20px 25px; overflow-y: auto; flex-grow: 1;"></div>
             
-            <div class="action-buttons" style="padding: 0 25px 25px 25px;">
+            <!-- Botões Fixos no Rodapé -->
+            <div class="action-buttons" style="padding: 20px 25px; background: white; border-top: 1px solid #e5e7eb; flex-shrink: 0; margin-bottom: 0; border-radius: 0 0 8px 8px;">
                 <button id="apply-correction-btn" class="btn-highlight">
                     <i class="ph-check-circle"></i> Aplicar Correções (Recomendado)
                 </button>
@@ -1148,8 +1152,7 @@ class="p-2 border border-gray-300 rounded-md bg-white placeholder-muted"></texta
             </div>
         </div>
     </div>
-    
-    <!-- Modal de Relatório de Erros -->
+	<!-- Modal de Relatório de Erros -->
     <div id="relatorioModal" class="modal-overlay">
         <div class="modal-content">
             <!-- Header do Modal -->
@@ -9208,126 +9211,135 @@ document.getElementById('apply-correction-btn').addEventListener('click', async 
       });
     });
     
-    function processSingleCarFile(f) {
-    return new Promise((resolve) => {
-        const ext = f.name.split('.').pop().toLowerCase();
-        const errContainer = document.getElementById('error-container');
+   function processSingleCarFile(f) {
+        return new Promise((resolve) => {
+            const ext = f.name.split('.').pop().toLowerCase();
+            const errContainer = document.getElementById('error-container');
 
-        const success = (gj) => {
-            const geojson = (gj.type === 'FeatureCollection') ? gj : { 
-                type: 'FeatureCollection', 
-                features: [gj.type === 'Feature' ? gj : { type: 'Feature', geometry: gj, properties: gj.properties || {} }] 
-            };
-            
-            const newLayer = L.geoJSON(geojson, {
-    style:{ 
-        color:'#b8860b',
-        fillColor:'#ffd700',
-        fillOpacity:0.3,
-        opacity: 0.5,
-        weight:1,
-        smoothFactor: 1.0
-    },
-    onEachFeature: (feature, layer) => {
+            const success = (gj) => {
+                const geojson = (gj.type === 'FeatureCollection') ? gj : { 
+                    type: 'FeatureCollection', 
+                    features: [gj.type === 'Feature' ? gj : { type: 'Feature', geometry: gj, properties: gj.properties || {} }] 
+                };
+                
+                // 1. Acha um código válido olhando TODAS as features ou o nome do arquivo
+                let validCode = extractCarCodeFromFilename(f.name);
+                let mainProps = {};
+                
+                for (const feat of geojson.features) {
+                    const p = feat.properties || {};
+                    const code = p.cod_imovel || p.COD_IMOVEL || p.num_certif;
+                    if (code) {
+                        validCode = code;
+                        mainProps = p;
+                        break;
+                    }
+                }
 
-        const carCodePopup =
-            normalizeCarCode(
-                feature.properties?.cod_imovel ||
-                feature.properties?.COD_IMOVEL ||
-                feature.properties?.num_certif ||
-                extractCarCodeFromFilename(f.name)
-            );
+                // Se ainda não tiver código, cria um a partir do nome do arquivo
+// Se ainda não tiver código, tenta extrair pelo menos o início ou usa nome genérico
+                let finalCarCode = validCode;
+                if (!validCode) {
+                    const partialMatch = f.name.toUpperCase().match(/\b([A-Z]{2}-\d{7})\b/);
+                    if (partialMatch) {
+                        finalCarCode = partialMatch[1] + "-MANUAL";
+                    } else {
+                        finalCarCode = `ARQ-${f.name.replace(/[^a-zA-Z0-9]/g, '').substring(0, 6).toUpperCase()}`;
+                    }
+                } else {
+                    // Só passa pelo formatador se for um código longo e oficial do SICAR (evita bagunçar as letras)
+                    if (validCode.replace(/[^a-zA-Z0-9]/g, '').length >= 41) {
+                        finalCarCode = normalizeCarCode(validCode) || validCode;
+                    }
+                }
 
-        const content = `
-            <div class="p-2" style="min-width:160px">
-                <b class="text-blue-800">Imóvel CAR:</b><br>
-                <span class="text-[10px] font-mono">${carCodePopup}</span><br><br>
-                <button onclick="removeSingleCar('${carCodePopup}')"
-                        style="background-color:#dc2626 !important;
-                               color:white !important;
-                               padding:5px;
-                               width:100%;
-                               border-radius:4px;
-                               font-size:11px;
-                               cursor:pointer;
-                               border:none;">
-                    <i class="ph-trash"></i> Remover da Análise
-                </button>
-            </div>
-        `;
+                // 2. Aplica esse código a TODAS as features do KML (Evita o balão 'null' em sub-áreas como APP)
+                geojson.features.forEach(feat => {
+                    if (!feat.properties) feat.properties = {};
+                    feat.properties.cod_imovel_injetado = finalCarCode;
+                });
+                
+                const newLayer = L.geoJSON(geojson, {
+                    style:{ color:'#b8860b', fillColor:'#ffd700', fillOpacity:0.3, opacity: 0.5, weight:1, smoothFactor: 1.0 },
+                    onEachFeature: (feature, layer) => {
+                        const carCodePopup = feature.properties.cod_imovel_injetado;
+                        const content = `
+                            <div class="p-2" style="min-width:160px">
+                                <b class="text-blue-800">Imóvel CAR:</b><br>
+                                <span class="text-[10px] font-mono">${carCodePopup}</span><br><br>
+                                <button onclick="removeSingleCar('${carCodePopup}')"
+                                        style="background-color:#dc2626 !important; color:white !important; padding:5px; width:100%; border-radius:4px; font-size:11px; cursor:pointer; border:none;">
+                                    <i class="ph-trash"></i> Remover da Análise
+                                </button>
+                            </div>
+                        `;
+                        layer.bindPopup(content);
+                    }
+                });
 
-        layer.bindPopup(content);
-    }
-});
+                if (newLayer.getLayers().length === 0) {
+                    errContainer.innerHTML = `<div class="error rounded-lg">AVISO: ${f.name} Sem polígonos válidos.</div>`;
+                    resolve();
+                    return;
+                }
 
-            if (newLayer.getLayers().length === 0) {
-                errContainer.innerHTML = `<div class="error rounded-lg">AVISO: ${f.name} Sem polígonos válidos.</div>`;
-                resolve();
-                return;
-            }
-
-            let mainFeature = geojson.features[0];
-            let props = mainFeature.properties || {};
-            let rawCode = props.cod_imovel || props.COD_IMOVEL || props.num_certif || extractCarCodeFromFilename(f.name);
-            
-            if (rawCode) {
-                const carCode = normalizeCarCode(rawCode);
-                if (!carCodes.includes(carCode)) {
-                    carCodes.push(carCode);
-                    carCodeFeatures.push(mainFeature);
-                    carProperties.push(props); 
+                // 3. Registra na análise ambiental OFICIALMENTE
+                if (!carCodes.includes(finalCarCode)) {
+                    carCodes.push(finalCarCode);
+                    carCodeFeatures.push(geojson.features[0]); // Usa a primeira geometria para métricas
+                    carProperties.push(mainProps); 
                     carCodeLayers.push(newLayer);
                 }
-            }
 
-
-carLayers.push(newLayer); 
-            carFileNames.push(f.name);
-            
-            // CORREÇÃO: Adiciona a camada visualmente no mapa e no grupo de features
-            newLayer.addTo(map);
-            if (typeof carFeatureGroup !== 'undefined') {
-                carFeatureGroup.addLayer(newLayer);
-                carFeatureGroup.bringToBack();
-            }
-
-            logEvento(f.name, 'carregamento', 'info', 'LOAD_CAR_OK', `Arquivo CAR "${f.name}" carregado.`);
-        };
-
-        if (ext === 'kml' || f.name.toLowerCase().endsWith('.kmz')) {
-            const r = new FileReader();
-            r.onload = e => {
-                try {
-                    const dom = new DOMParser().parseFromString(e.target.result,'text/xml');
-                    success(toGeoJSON.kml(dom));
-                } catch(err) { 
-                    errContainer.innerHTML = `<div class="error">Erro ao ler KML/KMZ.</div>`;
-                    resolve();
+                carLayers.push(newLayer); 
+                carFileNames.push(f.name);
+                
+                // 4. Adiciona ao mapa
+                newLayer.addTo(map);
+                if (typeof carFeatureGroup !== 'undefined') {
+                    carFeatureGroup.addLayer(newLayer);
+                    carFeatureGroup.bringToBack();
                 }
+
+                logEvento(f.name, 'carregamento', 'info', 'LOAD_CAR_OK', `Arquivo CAR carregado com código ${finalCarCode}.`);
+                resolve();
             };
-            r.readAsText(f);
-        } else if (ext === 'zip') {
-            const r = new FileReader();
-            r.onload = async e => {
-                try {
-                    const zip = await JSZip.loadAsync(e.target.result);
-                    let innerZipEntry = null;
-                    zip.forEach((path, entry) => { if (path.endsWith("Area_do_Imovel.zip")) innerZipEntry = entry; });
-                    let buffer = innerZipEntry ? await innerZipEntry.async("arraybuffer") : e.target.result;
-                    const gj = await shp(buffer);
-                    success(gj);
-                } catch (err) {
-                    errContainer.innerHTML = `<div class="error">Erro ao ler Shapefile no ZIP.</div>`;
-                    resolve();
-                }
-            };
-            r.readAsArrayBuffer(f);
-        } else {
-            errContainer.innerHTML = `<div class="error">Formato não suportado.</div>`;
-            resolve();
-        }
-    });
-}
+
+            // É este o bloco que havia apagado sem querer na colagem anterior
+            if (ext === 'kml' || f.name.toLowerCase().endsWith('.kmz')) {
+                const r = new FileReader();
+                r.onload = e => {
+                    try {
+                        const dom = new DOMParser().parseFromString(e.target.result,'text/xml');
+                        success(toGeoJSON.kml(dom));
+                    } catch(err) { 
+                        errContainer.innerHTML = `<div class="error">Erro ao ler KML/KMZ.</div>`;
+                        resolve();
+                    }
+                };
+                r.readAsText(f);
+            } else if (ext === 'zip') {
+                const r = new FileReader();
+                r.onload = async e => {
+                    try {
+                        const zip = await JSZip.loadAsync(e.target.result);
+                        let innerZipEntry = null;
+                        zip.forEach((path, entry) => { if (path.endsWith("Area_do_Imovel.zip")) innerZipEntry = entry; });
+                        let buffer = innerZipEntry ? await innerZipEntry.async("arraybuffer") : e.target.result;
+                        const gj = await shp(buffer);
+                        success(gj);
+                    } catch (err) {
+                        errContainer.innerHTML = `<div class="error">Erro ao ler Shapefile no ZIP.</div>`;
+                        resolve();
+                    }
+                };
+                r.readAsArrayBuffer(f);
+            } else {
+                errContainer.innerHTML = `<div class="error">Formato não suportado.</div>`;
+                resolve();
+            }
+        });
+    }
 
     async function processMultipleCarFiles(files) {
         document.getElementById('error-container').innerHTML = 
@@ -9336,7 +9348,8 @@ carLayers.push(newLayer);
         let processedCount = 0;
 
         // Limpa apenas se não houver CARs carregados anteriormente
-        if (carLayers.length === 0) {
+// Limpa a memória apenas se o mapa estiver 100% sem CARs (evita apagar CARs digitados ou já validados)
+        if (carLayers.length === 0 && carCodeLayers.length === 0) {
             clearAllCarData(false); 
             relatorio.meta.arquivos.car = []; 
         }
@@ -9385,10 +9398,9 @@ carLayers.push(newLayer);
             document.getElementById('top-message-container').innerHTML = 
                 `<div class="error rounded-lg">AVISO: Nenhum CAR válido foi carregado.</div>`;
         }
-updateUnifiedCarListUI();
+        updateUnifiedCarListUI();
         updateStatusPanel();
         validateAll(true); 
-        
         // CORREÇÃO: Atualiza o menu superior direito e a legenda para o arquivo recém-carregado
         if (typeof addLayerControl === 'function') addLayerControl();
         if (typeof updateLegend === 'function') updateLegend();
@@ -9695,6 +9707,7 @@ updateUnifiedCarListUI();
             return Promise.resolve();
         }
     }
+
 
     document.getElementById('show-map-btn').addEventListener('click', ()=>{
       const files = document.getElementById('file-input').files;
