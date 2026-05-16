@@ -5614,7 +5614,6 @@ async function removeSingleCar(carCode) {
     }
 }
 window.removeSingleCar = removeSingleCar;
-  
     /**
      * Limpeza das glebas e reset do histórico de relatórios.
      */
@@ -5690,8 +5689,7 @@ window.removeSingleCar = removeSingleCar;
     
     /**
      * Encontra o índice da coluna dado um cabeçalho alvo, usando normalização para flexibilidade.
-     */
-    function findColumnIndex(headers, target) {
+     */    function findColumnIndex(headers, target) {
         const normalizedTarget = normalizeHeader(target);
         
         // Definições de sinônimos/aliases
