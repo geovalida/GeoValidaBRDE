@@ -1689,7 +1689,8 @@ function resetGlebas() {
     }
 function extractCarCodeFromFilename(filename) {
     const base = String(filename || '').toUpperCase();
-    const m = base.match(/\b(PR-\d{7}-[0-9A-F]{32})\b/);
+    // CORREÇÃO: Agora aceita qualquer estado (2 letras) e não apenas PR
+    const m = base.match(/\b([A-Z]{2}-\d{7}-[0-9A-F]{32})\b/);
     return m ? m[1] : null;
 }
 
@@ -1720,6 +1721,7 @@ function extractCarCodeFromFilename(filename) {
             return geometry;
         }
     }
+
 
     // Converte um bioma (texto) em nome de camada PRODES correta
     function getProdesLayerNameFromBioma(bioma) {
