@@ -8,7 +8,7 @@ async function searchSicarByBbox(glebaFeature) {
 
     // Calcula o BBOX da gleba
     const bbox = turf.bbox(glebaFeature);
-    const bboxParam = `${bbox[0]},${bbox[1]},${bbox[2]},${bbox[3]},EPSG:4326`;r
+    const bboxParam = `${bbox[0]},${bbox[1]},${bbox[2]},${bbox[3]},EPSG:4326`;
     
     console.log(`[SICAR] Buscando CARs automáticos no BBOX: ${bboxParam}`);
 
@@ -193,6 +193,7 @@ async function triggerBackgroundEnvironmentalAnalysis() {
                 topMsg.innerHTML = '';
             }
         }
+        updateSidePanel()
     }
 }
     function enableGlebaDeleteMode() {
@@ -280,24 +281,38 @@ async function fetchIbamaEmbargosByBbox(bboxParam) {
 
         // Se for consulta local/remota, filtra pelo bbox
         if (geojson.features && geojson.features.length > 0 && bboxParam) {
+            console.log('[IBAMA][DEBUG] bboxParam recebido:', bboxParam);
+            console.log('[IBAMA][DEBUG] features carregadas antes do filtro:', geojson.features.length);
             // bboxParam: "minX,minY,maxX,maxY,EPSG:4326"
             const bboxArr = bboxParam.split(',').map(Number);
+            console.log('[IBAMA][DEBUG] bboxArr:', bboxArr);
             // Cria um polígono bbox
-            const bboxPoly = turf.bboxPolygon([bboxArr[0], bboxArr[1], bboxArr[2], bboxArr[3]]);
-            // Filtra features que intersectam o bbox
-            geojson.features = geojson.features.filter(f => {
+            let bboxPoly;
+            try {
+                bboxPoly = turf.bboxPolygon([bboxArr[0], bboxArr[1], bboxArr[2], bboxArr[3]]);
+            } catch (e) {
+                console.error('[IBAMA][DEBUG] Erro ao criar bboxPolygon:', e);
+                bboxPoly = null;
+            }
+            let countIntersect = 0;
+            geojson.features = geojson.features.filter((f, idx) => {
                 if (!f.geometry) return false;
                 try {
-                    return turf.booleanIntersects(f, bboxPoly);
+                    const intersects = bboxPoly ? turf.booleanIntersects(f, bboxPoly) : false;
+                    if (intersects) countIntersect++;
+                    return intersects;
                 } catch (e) {
+                    console.error(`[IBAMA][DEBUG] Erro no booleanIntersects da feature #${idx}:`, e, f);
                     return false;
                 }
             });
+            console.log(`[IBAMA][DEBUG] features após filtro bbox: ${geojson.features.length} (intersectaram: ${countIntersect})`);
         }
 
         if (geojson.features && geojson.features.length > 0) {
             window.ibamaQueryError = false;
             console.log('[IBAMA] GeoJSON retornado:', geojson.features.length, 'features found.');
+            console.log(`[IBAMA] ${geojson.features.length} embargos adicionados à lista global.`);
             // Limpa camadas anteriores do mapa
             if (typeof ibamaLayers !== 'undefined') {
                 ibamaLayers.forEach(l => { if (map.hasLayer(l)) map.removeLayer(l); });
@@ -451,6 +466,137 @@ async function fetchProdesPolygonalByBbox(bboxParam) {
   <script src="https://cdnjs.cloudflare.com/ajax/libs/wicket/1.3.8/wicket.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
+/* 1. LAYOUT PRINCIPAL */
+.main-container { max-width: 100% !important; padding: 0 40px !important; }
+
+.gv-dashboard-wrapper { 
+    display: flex; 
+    gap: 25px; 
+    margin-bottom: 40px; 
+    transition: all 0.3s ease; 
+    align-items: flex-start;
+}
+
+/* Quando o CAR é carregado, o wrapper ganha esta classe via JS */
+.gv-dashboard-wrapper.has-sidebar { display: flex !important; }
+
+/* 2. ÁREA DO MAPA */
+.gv-map-area { flex: 1; display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+#map { height: 600px !important; width: 100%; border-radius: 12px; border: 1px solid #e2e8f0; }
+
+/* 3. GRADE DE BOTÕES (6 colunas iguais) */
+.gv-action-bar-container {
+    display: grid !important;
+    grid-template-columns: repeat(6, 1fr) !important;
+    gap: 12px !important;
+    width: 100% !important;
+}
+.gv-action-bar-container button, .gv-action-bar-container label {
+    height: 50px !important; font-size: 12px !important; font-weight: 700 !important;
+    padding: 0 5px !important; border-radius: 8px !important;
+}
+
+/* 1. PAINEL LATERAL - Altura Sincronizada e Largura Otimizada */
+/* 1. PAINEL LATERAL - Largura ajustada para o código encostar na margem */
+#side-panel {
+    display: none;
+    width: 360px !important; 
+    height: 600px !important; 
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 12px !important; /* Padding reduzido para o texto aproveitar a margem */
+    position: relative;
+    flex-direction: column;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+    transition: width 0.3s ease;
+    flex-shrink: 0;
+    z-index: 10;
+}
+
+/* 2. BOTÃO DE COLAPSAR (A seta cinza com fundo para aparecer) */
+.toggle-sidebar-btn {
+    position: absolute !important;
+    right: 12px !important;
+    top: 15px !important;
+    background: #f1f5f9 !important; /* Fundo cinza claro para destacar */
+    color: #64748b !important;
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer !important;
+    font-size: 20px !important;
+    z-index: 9999 !important; /* À frente de tudo */
+    border: 1px solid #e2e8f0;
+}
+.toggle-sidebar-btn:hover { background: #e2e8f0 !important; color: #1e293b !important; }
+
+/* 3. TEXTO DO CAR (Encostando na margem sem quebrar) */
+.side-card-header b {
+    font-size: 10.8px !important; /* Tamanho calculado para o código oficial */
+    letter-spacing: -0.4px !important; /* Aperta as letras para caber na linha */
+    color: #1e40af;
+    display: block;
+    width: 100%;
+    white-space: nowrap; 
+}
+
+/* 4. CORES DO STATUS SICAR */
+.status-su { color: #dc2626 !important; } /* Vermelho para Suspenso */
+.status-at { color: #16a34a !important; } /* Verde para Ativo */
+
+/* 5. ALERTAS MAIORES */
+.side-alert-box {
+    padding: 12px !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+}
+
+/* Estado Colapsado */
+#side-panel.collapsed { width: 45px !important; padding: 0 !important; overflow: hidden; }
+#side-panel.collapsed #side-panel-header, #side-panel.collapsed #side-panel-content { display: none !important; }
+/* 3. ESTADO COLAPSADO */
+#side-panel.collapsed {
+    width: 50px !important;
+    padding: 10px 5px !important;
+    background: #f8fafc;
+}
+#side-panel.collapsed #side-panel-header, 
+#side-panel.collapsed #side-panel-content {
+    display: none !important;
+}
+
+
+.side-data-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px !important; /* Informações maiores */
+    margin-bottom: 5px;
+}
+
+
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar { width: 5px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+/* 6. TEXTOS MAIORES NO PAINEL */
+.side-card-car { border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; margin-bottom: 20px; background: #fff; }
+.side-card-header { background: #f8fafc; padding: 15px; border-bottom: 1px solid #e2e8f0; }
+.side-card-header p { font-size: 11px; color: #64748b; font-weight: 800; }
+.side-card-header b { font-size: 13px; color: #1e40af; font-family: monospace; }
+
+.side-data-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
+.side-data-row span { color: #64748b; }
+.side-data-row b { color: #1e293b; }
+
+.side-alert-box { padding: 12px; border-radius: 10px; margin-top: 10px; font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+
+/* Custom Scrollbar */
+#side-panel-scroll-area::-webkit-scrollbar { width: 5px; }
+#side-panel-scroll-area::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
     /* 1. ESTILOS GLOBAIS E FUNDO */
     body { 
         font-family: 'Inter', Arial, sans-serif; 
@@ -459,14 +605,7 @@ async function fetchProdesPolygonalByBbox(bboxParam) {
         background-color: #f8fafc;
         color: #334155;
     }
-    .main-container {
-        padding: 1.5rem 1rem;
-        margin: 0 auto;
-        max-width: 1100px;
-        background-color: #ffffff; 
-        min-height: 100vh;
-        box-shadow: none; 
-    }
+
     #controls { background-color: transparent; padding: 0; border-radius: 0; } 
     #contract-info-box { background-color: transparent; border-radius: 0; padding: 0; }
 /* escondendo o bloco dos dados do contrato */
@@ -966,8 +1105,28 @@ class="p-2 border border-gray-300 rounded-md bg-white placeholder-muted"></texta
     </div>
     
     <!-- Mapa -->
-    <div id="map" class="rounded-lg shadow-xl mb-4"></div>
-    
+<div class="gv-dashboard-wrapper">
+    <!-- CENTRO: MAPA -->
+    <div class="gv-map-area">
+        <div id="map"></div>
+        
+    </div>
+
+    <!-- DIREITA: PAINEL DE CONTROLE E STATUS -->
+ <aside id="side-panel">
+    <div class="toggle-sidebar-btn" onclick="toggleSidebar()"><i id="toggle-icon" class="ph-caret-double-right-fill"></i></div>
+    <div id="side-panel-header" class="mb-4">
+        <h3 class="font-bold text-slate-800 flex items-center gap-2 border-b pb-2">
+            <i class="ph-activity text-green-600 text-xl"></i> Resumo da Análise
+        </h3>
+    </div>
+
+    <div id="side-panel-content" style="display: flex; flex-direction: column; height: 100%; overflow: hidden;">
+        <!-- O JavaScript preencherá aqui -->
+        <p class="text-gray-400 italic text-xs text-center py-10">Aguardando dados para análise...</p>
+    </div>
+</aside>
+</div>
     <!-- Botões de Ação e Opções -->
     <div class="flex flex-col md:flex-row justify-start space-y-2 md:space-y-0 md:space-x-4 mb-8">
       
@@ -1114,7 +1273,7 @@ class="p-2 border border-gray-300 rounded-md bg-white placeholder-muted"></texta
     </div> Análise Ambiental -->
 
     <!-- Modal de Correção de Fechamento -->
-   <!-- Modal de Correção de Fechamento -->
+<!-- Modal de Correção de Fechamento -->
     <div id="correction-modal" class="modal-overlay">
         <!-- Alteração: Adicionado flexbox, max-height e tamanho limitador -->
         <div class="modal-content" style="position: relative; padding: 0 !important; display: flex; flex-direction: column; max-height: 90vh; width: 95%; max-width: 800px;">
@@ -1152,7 +1311,9 @@ class="p-2 border border-gray-300 rounded-md bg-white placeholder-muted"></texta
             </div>
         </div>
     </div>
-	<!-- Modal de Relatório de Erros -->
+    </div>
+    
+    <!-- Modal de Relatório de Erros -->
     <div id="relatorioModal" class="modal-overlay">
         <div class="modal-content">
             <!-- Header do Modal -->
@@ -1396,10 +1557,10 @@ function resetGlebas() {
 
     // URLs de fontes de dados PRODES (webfile + local fallback)
     const MMA_DATA_URLS = [
-        'https://validadorbrde.powerappsportals.com/Validador/webfiles/prodes.json',
+        'https://validadorglebas.powerappsportals.com/GeoValidaBRDE/prodes.json',
         './prodes.json'
     ];
-	    // Dados hardcoded para testes de sobreposição / PRODES (sempre em formato normalizado sem pontos)
+ // Dados hardcoded para testes de sobreposição / PRODES (sempre em formato normalizado sem pontos)
     const HARD_CODED_PRODES_DATA = {
         'MS-5006903-20653795E9D942A39F0AC0227622148F': {
             resultados: 'CERRADO',
@@ -1688,10 +1849,19 @@ function resetGlebas() {
         }
     }
 function extractCarCodeFromFilename(filename) {
-    const base = String(filename || '').toUpperCase();
-    // CORREÇÃO: Agora aceita qualquer estado (2 letras) e não apenas PR
-    const m = base.match(/\b([A-Z]{2}-\d{7}-[0-9A-F]{32})\b/);
-    return m ? m[1] : null;
+    if (!filename) return null;
+    // Remove a extensão (.zip, .kml) para analisar apenas o texto
+    const nameOnly = filename.split('.')[0].toUpperCase();
+    
+    // Procura o padrão oficial: 2 letras, traço, 7 números, traço, e o código hexadecimal longo
+    const match = nameOnly.match(/([A-Z]{2}-\d{7}-[A-Z0-9]{32})/);
+    if (match) return match[1];
+
+    // Se o código for um pouco diferente (mais curto ou mais longo), mas seguir o padrão inicial
+    const matchFlex = nameOnly.match(/([A-Z]{2}-\d{7}-[A-Z0-9]+)/);
+    if (matchFlex) return matchFlex[1];
+
+    return null;
 }
 
     // Normaliza código CAR: remove pontos e traços extras e garante formato 'UF-XXXXXXX-...'
@@ -1721,7 +1891,6 @@ function extractCarCodeFromFilename(filename) {
             return geometry;
         }
     }
-
 
     // Converte um bioma (texto) em nome de camada PRODES correta
     function getProdesLayerNameFromBioma(bioma) {
@@ -2303,7 +2472,7 @@ if (ibamaResult&& ibamaResult.length > 0) {
         }
 
         await calculateEnvironmentalMetricsCombined();
-        openRelatorioModal(); 
+        // openRelatorioModal(); comentei pra deixa tuo no painel do lado, e o modal é aberto após selecionar o botao
         addLayerControl();
         updateLegend();
 
@@ -2455,7 +2624,7 @@ if (ibamaResult&& ibamaResult.length > 0) {
             }
             // URLs dos arquivos locais e Power Pages
             const localUrl = `./cnfp_${uf}.json`;
-            const remoteUrl = `https://validadorbrde.powerappsportals.com/Validador/webfiles/cnfp_${uf}.json`;
+            const remoteUrl = `https://validadorglebas.powerappsportals.com/GeoValidaBRDE/cnfp_${uf}.json`;
             // Função para buscar e processar um JSON
             async function fetchAndProcess(url) {
                 try {
@@ -2636,8 +2805,260 @@ if (allFeatures.length > 0) {
             window.ucQueryError = true; // Ativa a flag de falha
         }
     }
+// 1. Modifique a função de busca para ler os novos campos laterais
+async function buscarGlebasAutomatico() {
+    const agencia = document.getElementById('agencia-side').value;
+    const contrato = document.getElementById('contrato-side').value;
+    const btn = document.getElementById('btn-sync-banco');
 
-    // Calcular métricas ambientais para todos os CARs (usa dados PRODES por CAR/bioma)
+    if (!agencia || !contrato) {
+        alert("⚠️ Informe Agência e Contrato no painel lateral.");
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = 'Consultando...';
+
+    try {
+        const response = await fetch("SUA_URL_DO_POWER_AUTOMATE", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ agencia, contrato })
+        });
+
+        const dados = await response.json();
+
+        // Se o banco retornar ODGEO_LATITUDE etc...
+        let textoFormatado = dados.map(item => {
+            return `${item.ODGEO_NRGLEBA} ${item.ODGEO_NRPONTO} ${item.ODGEO_LATITUDE} ${item.ODGEO_LONGITUDE} ${item.ODGEO_ALTITUDE}`;
+        }).join('\n');
+
+        parseColumnarData(textoFormatado);
+        drawGlebasFromData(glebaData);
+        
+
+
+    } catch (error) {
+        alert("Erro ao conectar com o banco.");
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Puxar Dados do Banco';
+    }
+            // Chamada vital para atualizar o painel lateral
+        validateAll(true);
+        updateSidePanel(); 
+}
+
+// 2. Função que ESCREVE os dados no painel lateral
+function toggleSidebar() {
+    const panel = document.getElementById('side-panel');
+    const icon = document.getElementById('toggle-icon');
+    const wrapper = document.querySelector('.gv-dashboard-wrapper');
+    
+    panel.classList.toggle('collapsed');
+    
+    if (panel.classList.contains('collapsed')) {
+        icon.className = 'ph-caret-double-left-fill'; // Muda para "Abrir"
+        wrapper.classList.remove('has-sidebar');
+    } else {
+        icon.className = 'ph-caret-double-right-fill'; // Muda para "Fechar"
+        wrapper.classList.add('has-sidebar');
+    }
+    setTimeout(() => { if (map) map.invalidateSize(); }, 300);
+}
+
+function updateSidePanel() {
+    const container = document.getElementById('side-panel-content');
+    const sidePanel = document.getElementById('side-panel');
+    const wrapper = document.querySelector('.gv-dashboard-wrapper');
+    
+    if (!container || !sidePanel || !wrapper) return;
+
+    const temCar = carCodes && carCodes.length > 0;
+    const metrics = window.environmentalMetrics;
+
+    if (!temCar) {
+        sidePanel.style.display = 'none';
+        wrapper.classList.remove('has-sidebar');
+        return;
+    } else {
+        sidePanel.style.display = 'flex';
+        if (!sidePanel.classList.contains('collapsed')) {
+            wrapper.classList.add('has-sidebar');
+        }
+    }
+
+    let dynamicCards = '';
+
+    carCodes.forEach((code, index) => {
+        const prop = carProperties[index] || {};
+        const statusSicar = (prop.status_imovel || "Ativo").toUpperCase();
+        const isSuspenso = statusSicar.includes("SUSPENSO") || statusSicar.includes("SU");
+        const carMetric = metrics?.carMetrics?.find(m => normalizeCarCode(m.code) === normalizeCarCode(code));
+
+        dynamicCards += `
+        <div class="side-card-car bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm mb-4">
+            <div class="side-card-header bg-slate-50 p-3 border-b border-slate-200">
+                <p class="text-[9px] font-bold text-slate-400 uppercase mb-1">Imóvel Analisado ${index + 1}</p>
+                <b class="font-mono">${code}</b>
+            </div>
+            <div class="p-4">
+                <div class="side-data-row">
+                    <span>Status SICAR:</span>
+                    <b class="${isSuspenso ? 'text-red-600' : 'text-green-600'}">${statusSicar}</b>
+                </div>
+                <div class="side-data-row">
+                    <span>Módulos Fiscais:</span>
+                    <b class="text-slate-700">${parseFloat(prop.modulos_fiscais || prop.m_fiscal || 0).toFixed(2)} MF</b>
+                </div>
+                <div class="bg-slate-100 p-2 rounded text-center font-bold text-slate-600 text-[11px] uppercase mt-2">
+                    ${prop.municipio || 'N/D'} - ${prop.uf || ''}
+                </div>
+                
+                <div class="mt-5">
+                    <p class="text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest border-b pb-1">Checklist de Riscos</p>
+                    ${generateComprehensiveAlerts(carMetric)}
+                </div>
+            </div>
+        </div>`;
+    });
+
+    // LISTAGEM DE GLEBAS
+    let glebasHtml = '';
+    if (glebaData.length > 0) {
+        glebasHtml = `<div class="mt-2 pt-4 border-t border-slate-100">
+            <p class="font-bold text-slate-400 uppercase text-[9px] mb-3 px-1">Glebas no Mapa</p>`;
+        glebaData.sort((a,b)=>a.glebaIndex-b.glebaIndex).forEach(g => {
+            const area = g.layer ? calculateGlebaArea(g.layer) : '0.00';
+            glebasHtml += `
+                <div class="flex items-center gap-2 p-2 bg-slate-50 rounded-lg text-[13px] mb-1 border border-slate-100">
+                    <span class="w-3 h-3 rounded-full" style="background:${getGlebaColor(g.glebaIndex)}"></span>
+                    <span class="font-bold text-slate-600">Gleba ${g.glebaIndex}</span>
+                    <span class="ml-auto font-mono text-blue-800 font-black text-[15px]">${area} ha</span>
+                </div>`;
+        });
+        glebasHtml += `</div>`;
+    }
+
+    // MONTAGEM FINAL: Área rolável + Botão Verde Fixo no final
+    container.innerHTML = `
+        <div id="side-panel-scroll-area" class="custom-scrollbar" style="flex: 1; overflow-y: auto; padding-right: 5px;">
+            ${dynamicCards}
+            ${glebasHtml}
+        </div>
+        <button onclick="openRelatorioModal()" class="w-full bg-green-700 hover:bg-green-800 text-white text-[11px] font-black py-4 rounded-lg transition-all shadow-md mt-4 flex-shrink-0">
+            VER RELATÓRIO COMPLETO
+        </button>
+    `;
+}
+function generateComprehensiveAlerts(m) {
+    if (!m) return `<p class="text-xs text-slate-400 italic"><i class="ph-spinner ph-spin"></i> Analisando bases...</p>`;
+    let alerts = [];
+
+    // PRODES
+    if (m.deforestationArea > 0) {
+        const modFisc = parseFloat(m.properties?.modulos_fiscais || m.properties?.m_fiscal || 0);
+        let deadline = modFisc > 15 ? "04/01/2027" : (modFisc >= 4 ? "01/07/2027" : "03/01/2028");
+        alerts.push(`<div class="side-alert-box bg-red-50 text-red-800 border-l-4 border-red-500">
+            <i class="ph-warning-octagon-fill"></i> 
+            <div class="flex flex-col">
+                <span>PRODES: ${m.deforestationArea.toFixed(2)} ha</span>
+                <span style="font-size: 10px; font-weight: normal; opacity: 0.8;">Obrigatório em: ${deadline}</span>
+            </div>
+        </div>`);
+    }
+    // UNIDADE DE CONSERVAÇÃO
+    if (m.intersectingUCs?.length > 0) {
+        alerts.push(`<div class="side-alert-box bg-blue-50 text-blue-800 border-l-4 border-blue-500">
+            <i class="ph-tree-structure-fill"></i> <span>Sobreposição UC</span>
+        </div>`);
+    }
+    // FLORESTA PÚBLICA
+    if (m.intersectingPublicForests?.length > 0) {
+        alerts.push(`<div class="side-alert-box bg-emerald-50 text-emerald-900 border-l-4 border-emerald-600">
+            <i class="ph-tree-evergreen-fill"></i> <span>Floresta Pública</span>
+        </div>`);
+    }
+    // IBAMA
+    if (m.ibamaEmbargos?.length > 0) {
+        alerts.push(`<div class="side-alert-box bg-purple-50 text-purple-800 border-l-4 border-purple-500">
+            <i class="ph-warning-fill"></i> <span>Embargo IBAMA</span>
+        </div>`);
+    }
+    // MAPBIOMAS
+    if (m.mapBiomasAlerts?.length > 0) {
+        alerts.push(`<div class="side-alert-box bg-orange-50 text-orange-800 border-l-4 border-orange-500">
+            <i class="ph-fire-fill"></i> <span>MapBiomas Recente</span>
+        </div>`);
+    }
+
+    return alerts.length ? alerts.join('') : `<div class="side-alert-box bg-green-50 text-green-700 border border-green-100"><i class="ph-check-circle-fill"></i> Sem restrições críticas</div>`;
+}
+function generateCarAlertsHtml(carMetric) {
+    if (!carMetric) {
+        // Se a análise ainda estiver rodando ou não houver métricas
+        return `<div class="flex items-center gap-2 text-slate-400 italic text-[10px]">
+                    <i class="ph-spinner ph-spin"></i> Aguardando conclusão da análise...
+                </div>`;
+    }
+
+    let alerts = [];
+
+    // 1. PRODES
+    if (carMetric.deforestationArea > 0) {
+        alerts.push(`
+            <div class="flex items-start gap-2 p-2 bg-red-50 border-l-2 border-red-500 rounded text-red-800">
+                <i class="ph-warning-octagon-fill text-sm"></i>
+                <div class="text-[10px]"><b>PRODES:</b> ${carMetric.deforestationArea.toFixed(2)} ha</div>
+            </div>`);
+    }
+
+    // 2. Unidades de Conservação (UC)
+    if (carMetric.intersectingUCs?.length > 0) {
+        alerts.push(`
+            <div class="flex items-start gap-2 p-2 bg-blue-50 border-l-2 border-blue-600 rounded text-blue-800">
+                <i class="ph-tree-structure-fill text-sm"></i>
+                <div class="text-[10px]"><b>Sobreposição UC:</b> Identificada</div>
+            </div>`);
+    }
+
+    // 3. Florestas Públicas (FP)
+    if (carMetric.intersectingPublicForests?.length > 0) {
+        alerts.push(`
+            <div class="flex items-start gap-2 p-2 bg-emerald-50 border-l-2 border-emerald-600 rounded text-emerald-900">
+                <i class="ph-tree-evergreen-fill text-sm"></i>
+                <div class="text-[10px]"><b>Floresta Pública:</b> Identificada</div>
+            </div>`);
+    }
+
+    // 4. IBAMA
+    if (carMetric.ibamaEmbargos?.length > 0) {
+        alerts.push(`
+            <div class="flex items-start gap-2 p-2 bg-purple-50 border-l-2 border-purple-500 rounded text-purple-900">
+                <i class="ph-warning-fill text-sm"></i>
+                <div class="text-[10px]"><b>IBAMA:</b> Embargos Ativos</div>
+            </div>`);
+    }
+
+    // 5. MapBiomas
+    if (carMetric.mapBiomasAlerts?.length > 0) {
+        alerts.push(`
+            <div class="flex items-start gap-2 p-2 bg-orange-50 border-l-2 border-orange-500 rounded text-orange-900">
+                <i class="ph-fire-fill text-sm"></i>
+                <div class="text-[10px]"><b>MapBiomas:</b> Alertas Recentes</div>
+            </div>`);
+    }
+
+    if (alerts.length === 0) {
+        return `
+            <div class="flex items-center gap-2 p-2 bg-green-50 border border-green-100 rounded text-green-700 text-[10px]">
+                <i class="ph-shield-check-fill"></i> <b>Nenhuma restrição crítica</b>
+            </div>`;
+    }
+
+    return alerts.join('');
+}
+ // Calcular métricas ambientais para todos os CARs (usa dados PRODES por CAR/bioma)
 async function calculateEnvironmentalMetricsCombined() {
     if (carCodeFeatures.length === 0) return Promise.resolve();
 
@@ -3564,6 +3985,25 @@ function openRelatorioModal() {
         btn.classList.remove('opacity-50', 'cursor-not-allowed');
     }
 }
+function getProdesDeadlineMessage(modFisc) {
+    if (!modFisc || modFisc <= 0) return "";
+    
+    let data = "";
+    let faixa = "";
+
+    if (modFisc > 15) {
+        data = "04/01/2027";
+        faixa = "mais de 15 módulos fiscais";
+    } else if (modFisc >= 4) {
+        data = "01/07/2027";
+        faixa = "entre 4 e 15 módulos fiscais";
+    } else {
+        data = "03/01/2028";
+        faixa = "até 4 módulos fiscais";
+    }
+
+    return `<br><span class="text-red-700 font-bold italic">Imóvel com ${modFisc.toFixed(2)} MF (${faixa}): a análise de conformidade Prodes será obrigatória a partir de ${data}.</span>`;
+}
     function populateEnvironmentalTab() {
         const container = document.getElementById('environmental-content-unified');
         // NOVO: Verifica se há CARs carregados antes de mostrar métricas
@@ -3675,7 +4115,7 @@ function openRelatorioModal() {
                     ${(car.deforestationArea > 0) ? `
                         <div class="bg-orange-50 border border-orange-400 p-3 rounded-md text-orange-900 text-sm">
                             <b>Supressão de vegetação detectada (PRODES) no(s) ano(s): ${anosTxt}</b>
-                            ${(modFisc > 0 && modFisc < 4) ? `<br><span class="text-red-700 font-bold">Imóvel com ${modFisc.toFixed(2)} módulos fiscais: operação não será objeto de análise Prodes até 04/01/2027.</span>` : ''}
+                             ${getProdesDeadlineMessage(modFisc)}
                         </div>
                     ` : `<div class="bg-green-50 border border-green-400 p-3 rounded-md text-green-900 text-sm">Nenhuma supressão PRODES identificada (2019-2025).</div>`}
 
@@ -4318,6 +4758,7 @@ const pdfColorPurple = { bg: [243, 232, 255], border: [233, 213, 255], title: [0
         for (let i = 0; i < metrics.carMetrics.length; i++) {
             const car = metrics.carMetrics[i];
             const props = carProperties[i] || car.properties || {};
+            const modFisc = parseFloat(props.modulos_fiscais || props.m_fiscal || 0);
             
             checkPageBreak(40);
             
@@ -4383,15 +4824,23 @@ const pdfColorPurple = { bg: [243, 232, 255], border: [233, 213, 255], title: [0
 
             const dentro = (car.prodesData?.dentro_criterio ?? car.prodesData?.dentro_tolerancia ?? 'N/D');
             const julg = (car.prodesData?.julg_status || 'N/D');
+            let notaObrigatoriedade = "";
+if (modFisc > 15) notaObrigatoriedade = `Obrigatoriedade PRODES em 04/01/2027 (>15 MF).`;
+else if (modFisc >= 4) notaObrigatoriedade = `Obrigatoriedade PRODES em 01/07/2027 (4 a 15 MF).`;
+else notaObrigatoriedade = `Obrigatoriedade PRODES em 03/01/2028 (até 4 MF).`;
 
+if (car.deforestationArea > 0) {
+    prodesItems.push([{ l: "Nota Legal:", v: notaObrigatoriedade }]);
+}
             prodesItems.push([
                 { l: "Bioma:", v: bioma },
                 { l: "Supressão (19-25):", v: `${defArea.toFixed(2)} ha` },
                 { l: "Soma Desmatamento:", v: `${soma.toFixed(2)} ha` },
                 { l: "Área dentro do CAR:", v: `${defArea.toFixed(2)} ha (${pctCar.toFixed(2)}%)` },
                 { l: "Dentro do Critério:", v: dentro },
-                { l: "Julgamento PRODES:", v: julg }
-            ]);
+                { l: "Julgamento PRODES:", v: julg },
+                { l: "Nota Legal:", v: notaObrigatoriedade } // Adiciona a nota aqui
+                ]);
 
                 const areaPorAnoObj = (car.areaPorAno && typeof car.areaPorAno === 'object') ? car.areaPorAno : {};
                 const anos = Object.entries(areaPorAnoObj)
@@ -4417,6 +4866,7 @@ const pdfColorPurple = { bg: [243, 232, 255], border: [233, 213, 255], title: [0
                 prodesItems.push([{ l: "Nota PRODES:", v: "Conforme NT Inpe, a sobreposição < 60m pode ser desconsiderada." }]);
                 }
             }
+            
                 let prodesStyle = pdfColorGreen;
                 if (prodesQueryError) prodesStyle = pdfColorGray;
                 else if (car.deforestationArea > 0) prodesStyle = pdfColorRed;
@@ -4691,7 +5141,7 @@ const drawTimelineSection = (title, eventsArray) => {
         doc.setFontSize(9); doc.setTextColor(60); doc.setFont("helvetica", "normal");
         const bases = [
             "• SICAR: Serviço Florestal Brasileiro - https://geoserver.car.gov.br/geoserver/sicar.",
-            "• PRODES (INPE): Monitoramento de desmatamento por satélite (Marco: 01/08/2019) https://terrabrasilis.dpi.inpe.br/downloads/.",
+            "• PRODES (INPE): Monitoramento de desmatamento por satélite - https://terrabrasilis.dpi.inpe.br/downloads/.",
             "• MAPBIOMAS: Rede colaborativa de alertas de supressão - https://plataforma.alerta.mapbiomas.org",
             "• IBAMA: Cadastro Nacional de Autuações e Embargos - https://siscom.ibama.gov.br/geoserver/",
             "• Serviço Florestal Brasileiro: Cadastro de Florestas Públicas do Brasil - https://sistemas.florestal.gov.br/geoserver/",
@@ -4719,7 +5169,15 @@ const drawTimelineSection = (title, eventsArray) => {
             "",
             "Para solicitar revisão dos polígonos Prodes entre em contato com o Canal de Atendimento BiomasBR em http://www.inpe.br/canalatendimento-biomasbr/.",
 	    "",
-	    "Conforme Nota Técnica do Inpe, disponível em https://data.inpe.br/biomasbr/o-uso-dos-dados-do-prodes-para-avaliar-a-conformidade-ambiental-de-propriedades-rurais/, a sobreposição PRODES menor que 60m pode ser desconsiderada.",
+	    "Conforme Nota Técnica do Inpe, disponível em https://data.inpe.br/biomasbr/o-uso-dos-dados-do-prodes-para-avaliar-a-conformidade-ambiental-de-propriedades-rurais/, a sobreposição menor que 60 metros a partir do limite (CAR) da propriedade que intercepta o Prodes pode ser desconsiderada.",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
             "",
             "",
             "",
@@ -4774,7 +5232,6 @@ const drawTimelineSection = (title, eventsArray) => {
     }
 }
     // --- FUNÇÃO CENTRAL DE INICIALIZAÇÃO DO MAPA ---
-
     function initializeMap() {
 
         // Definições dos ícones personalizados com o SVG inline
@@ -5455,92 +5912,100 @@ const drawTimelineSection = (title, eventsArray) => {
 function clearAllCarData(shouldClearInput = true) {
     console.log("Iniciando limpeza total de CARs do mapa e da memória...");
 
-    // 1. Limpeza do Grupo Principal (mais eficiente para o Leaflet)
-    if (carFeatureGroup) {
+    // 1. Limpeza do Grupo Principal
+    if (typeof carFeatureGroup !== 'undefined' && carFeatureGroup) {
         carFeatureGroup.clearLayers();
     }
 
-    // 2. Limpeza física das camadas rastreadas por código
+    // 2. Limpeza física usando .remove() (Funciona mesmo se a camada estiver agrupada no menu)
     if (window.carCodeLayers && carCodeLayers.length > 0) {
         carCodeLayers.forEach(layer => {
-            if (map && map.hasLayer(layer)) map.removeLayer(layer);
+            if (layer) layer.remove(); 
         });
-        carCodeLayers = [];
     }
 
-    // 3. Limpeza física das camadas rastreadas por arquivo
     if (window.carLayers && carLayers.length > 0) {
         carLayers.forEach(layer => {
-            if (map && map.hasLayer(layer)) map.removeLayer(layer);
+            if (layer) layer.remove();
         });
-        carLayers = [];
     }
 
-    // 4. Limpeza física dos candidatos (pontilhados amarelos)
     if (window.candidateCarLayers && candidateCarLayers.length > 0) {
         candidateCarLayers.forEach(c => {
-            if (map && map.hasLayer(c.layer)) map.removeLayer(c.layer);
+            if (c && c.layer) c.layer.remove();
         });
-        candidateCarLayers = [];
     }
 
-    // 5. VARREDURA DE SEGURANÇA (Brute Force)
-    // Remove qualquer polígono que tenha a cor padrão do CAR (Amarelo/Dourado)
-    // Isso remove CARs que possam ter perdido a referência nos arrays
-    if (map) {
+    // 3. VARREDURA DE SEGURANÇA (Brute Force)
+    if (typeof map !== 'undefined' && map) {
         map.eachLayer(function (layer) {
             if (layer instanceof L.GeoJSON || layer instanceof L.Polygon) {
                 if (layer.options && (layer.options.color === '#ffd700' || layer.options.color === '#b8860b')) {
-                    map.removeLayer(layer);
+                    layer.remove();
                 }
             }
         });
     }
 
-    // 6. Limpeza da Memória (Arrays)
+    // 4. AGORA SIM, Limpamos a Memória (Arrays)
     carCodes = [];
+    carCodeLayers = [];
+    carLayers = [];
     carCodeFeatures = [];
     carProperties = [];
     carFileNames = [];
+    candidateCarLayers = [];
     allIbamaEmbargos = [];
 
-    // 7. Limpeza de dados ambientais (PRODES, UC, etc)
-    clearEnvironmentalData();
-    clearExtravasamentoLayers();
+    // 5. Limpeza de dados ambientais associados
+    if (typeof clearEnvironmentalData === 'function') clearEnvironmentalData();
+    if (typeof clearExtravasamentoLayers === 'function') clearExtravasamentoLayers();
     if (typeof clearWarnings === 'function') clearWarnings();
     if (typeof clearCross === 'function') clearCross();
 
-    // 8. Limpeza de Inputs
+    // 6. Limpeza de Inputs
     if (shouldClearInput) {
-        if (document.getElementById('car-input')) document.getElementById('car-input').value = '';
-        if (document.getElementById('car-code-input')) document.getElementById('car-code-input').value = '';
+        const carInput = document.getElementById('car-input');
+        if (carInput) carInput.value = '';
+        const carCodeInput = document.getElementById('car-code-input');
+        if (carCodeInput) carCodeInput.value = '';
     }
 
-    // 9. Reset de Relatório e Sessão
-    relatorio.eventos = relatorio.eventos.filter(e => !e.entidade.includes('CAR'));
-    initialErrors = initialErrors.filter(e => e.codigo !== 'CAR_OVERFLOW_ERR' && e.codigo !== 'CAR_NO_INTERSECT_ERR' && !e.entidade.includes('CAR'));
-    relatorio.meta.arquivos.car = [];
-    initialExtravasamentoPct = 0.00;
+    // 7. Reset de Relatório e Sessão
+    if (typeof relatorio !== 'undefined') {
+        relatorio.eventos = relatorio.eventos.filter(e => !e.entidade.includes('CAR'));
+        relatorio.meta.arquivos.car = [];
+    }
+    if (typeof initialErrors !== 'undefined') {
+        initialErrors = initialErrors.filter(e => e.codigo !== 'CAR_OVERFLOW_ERR' && e.codigo !== 'CAR_NO_INTERSECT_ERR' && !e.entidade.includes('CAR'));
+    }
+    if (typeof initialExtravasamentoPct !== 'undefined') {
+        initialExtravasamentoPct = 0.00;
+    }
 
-    if (glebaData.length === 0) {
-        relatorio.meta.sessaoId = crypto.randomUUID();
-        relatorio.eventos = [];
+    if (typeof glebaData !== 'undefined' && glebaData.length === 0) {
+        if (typeof relatorio !== 'undefined') {
+            relatorio.meta.sessaoId = crypto.randomUUID();
+            relatorio.eventos = [];
+        }
         initialErrors = [];
     }
 
-    // 10. Atualização da Interface
-    updateUnifiedCarListUI();
-    drawGlebasFromData(glebaData, true); // Redesenha glebas para limpar manchas vermelhas
+    // 8. Atualização da Interface
+    if (typeof updateUnifiedCarListUI === 'function') updateUnifiedCarListUI();
+    if (typeof drawGlebasFromData === 'function' && typeof glebaData !== 'undefined') drawGlebasFromData(glebaData, true);
     
     if (typeof addLayerControl === 'function') addLayerControl();
-    updateLegend();
-    updateStatusPanel();
-    updateClearButtonsVisibility();
-    updateReportSummary();
+    if (typeof updateLegend === 'function') updateLegend();
+    if (typeof updateStatusPanel === 'function') updateStatusPanel();
+    if (typeof updateClearButtonsVisibility === 'function') updateClearButtonsVisibility();
+    if (typeof updateReportSummary === 'function') updateReportSummary();
 
-    document.getElementById('top-message-container').innerHTML =
-        `<div class="success-message"><i class="ph-check-circle-fill"></i> Mapa e memória limpos com sucesso.</div>`;
-    setTimeout(() => { document.getElementById('top-message-container').innerHTML = ''; }, 4000);
+    const topMsg = document.getElementById('top-message-container');
+    if (topMsg) {
+        topMsg.innerHTML = `<div class="success-message"><i class="ph-check-circle-fill"></i> CAR(s) removido(s) com sucesso.</div>`;
+        setTimeout(() => { topMsg.innerHTML = ''; }, 4000);
+    }
 }
 async function removeSingleCar(carCode) {
     if (!carCode) return;
@@ -5648,6 +6113,7 @@ window.removeSingleCar = removeSingleCar;
         
         updateLegend();
         updateStatusPanel();
+        updateSidePanel()
 
         // CORREÇÃO DE MENSAGEM: Usar o container do topo (#top-message-container)
         document.getElementById('top-message-container').innerHTML = 
@@ -5691,7 +6157,8 @@ window.removeSingleCar = removeSingleCar;
     
     /**
      * Encontra o índice da coluna dado um cabeçalho alvo, usando normalização para flexibilidade.
-     */    function findColumnIndex(headers, target) {
+     */
+    function findColumnIndex(headers, target) {
         const normalizedTarget = normalizeHeader(target);
         
         // Definições de sinônimos/aliases
@@ -8951,6 +9418,7 @@ if (data.length > 0) {
       }
       
       document.getElementById('correction-modal').style.display = 'none';
+      updateSidePanel()
     }
 
     function updatePoints(){
@@ -9213,136 +9681,114 @@ document.getElementById('apply-correction-btn').addEventListener('click', async 
       });
     });
     
-   function processSingleCarFile(f) {
-        return new Promise((resolve) => {
-            const ext = f.name.split('.').pop().toLowerCase();
-            const errContainer = document.getElementById('error-container');
+function processSingleCarFile(f) {
+    return new Promise((resolve) => {
+        const ext = f.name.split('.').pop().toLowerCase();
+        const errContainer = document.getElementById('error-container');
 
-            const success = (gj) => {
-                const geojson = (gj.type === 'FeatureCollection') ? gj : { 
-                    type: 'FeatureCollection', 
-                    features: [gj.type === 'Feature' ? gj : { type: 'Feature', geometry: gj, properties: gj.properties || {} }] 
-                };
-                
-                // 1. Acha um código válido olhando TODAS as features ou o nome do arquivo
-                let validCode = extractCarCodeFromFilename(f.name);
-                let mainProps = {};
-                
+        const success = (gj) => {
+            const geojson = (gj.type === 'FeatureCollection') ? gj : { 
+                type: 'FeatureCollection', 
+                features: [gj.type === 'Feature' ? gj : { type: 'Feature', geometry: gj, properties: gj.properties || {} }] 
+            };
+            
+            // 1. TENTA EXTRAIR O CÓDIGO PRIMEIRO PELO NOME DO ARQUIVO (Já que seus nomes estão corretos)
+            let validCode = extractCarCodeFromFilename(f.name);
+            let mainProps = {};
+
+            // 2. SE O NOME DO ARQUIVO NÃO TINHA O CÓDIGO, BUSCA DENTRO DO CONTEÚDO
+            if (!validCode) {
                 for (const feat of geojson.features) {
                     const p = feat.properties || {};
-                    const code = p.cod_imovel || p.COD_IMOVEL || p.num_certif;
-                    if (code) {
-                        validCode = code;
+                    const internalCode = p.cod_imovel || p.COD_IMOVEL || p.num_certif;
+                    if (internalCode && String(internalCode).length > 10) {
+                        validCode = internalCode;
                         mainProps = p;
                         break;
                     }
                 }
-
-                // Se ainda não tiver código, cria um a partir do nome do arquivo
-// Se ainda não tiver código, tenta extrair pelo menos o início ou usa nome genérico
-                let finalCarCode = validCode;
-                if (!validCode) {
-                    const partialMatch = f.name.toUpperCase().match(/\b([A-Z]{2}-\d{7})\b/);
-                    if (partialMatch) {
-                        finalCarCode = partialMatch[1] + "-MANUAL";
-                    } else {
-                        finalCarCode = `ARQ-${f.name.replace(/[^a-zA-Z0-9]/g, '').substring(0, 6).toUpperCase()}`;
-                    }
-                } else {
-                    // Só passa pelo formatador se for um código longo e oficial do SICAR (evita bagunçar as letras)
-                    if (validCode.replace(/[^a-zA-Z0-9]/g, '').length >= 41) {
-                        finalCarCode = normalizeCarCode(validCode) || validCode;
-                    }
-                }
-
-                // 2. Aplica esse código a TODAS as features do KML (Evita o balão 'null' em sub-áreas como APP)
-                geojson.features.forEach(feat => {
-                    if (!feat.properties) feat.properties = {};
-                    feat.properties.cod_imovel_injetado = finalCarCode;
-                });
-                
-                const newLayer = L.geoJSON(geojson, {
-                    style:{ color:'#b8860b', fillColor:'#ffd700', fillOpacity:0.3, opacity: 0.5, weight:1, smoothFactor: 1.0 },
-                    onEachFeature: (feature, layer) => {
-                        const carCodePopup = feature.properties.cod_imovel_injetado;
-                        const content = `
-                            <div class="p-2" style="min-width:160px">
-                                <b class="text-blue-800">Imóvel CAR:</b><br>
-                                <span class="text-[10px] font-mono">${carCodePopup}</span><br><br>
-                                <button onclick="removeSingleCar('${carCodePopup}')"
-                                        style="background-color:#dc2626 !important; color:white !important; padding:5px; width:100%; border-radius:4px; font-size:11px; cursor:pointer; border:none;">
-                                    <i class="ph-trash"></i> Remover da Análise
-                                </button>
-                            </div>
-                        `;
-                        layer.bindPopup(content);
-                    }
-                });
-
-                if (newLayer.getLayers().length === 0) {
-                    errContainer.innerHTML = `<div class="error rounded-lg">AVISO: ${f.name} Sem polígonos válidos.</div>`;
-                    resolve();
-                    return;
-                }
-
-                // 3. Registra na análise ambiental OFICIALMENTE
-                if (!carCodes.includes(finalCarCode)) {
-                    carCodes.push(finalCarCode);
-                    carCodeFeatures.push(geojson.features[0]); // Usa a primeira geometria para métricas
-                    carProperties.push(mainProps); 
-                    carCodeLayers.push(newLayer);
-                }
-
-                carLayers.push(newLayer); 
-                carFileNames.push(f.name);
-                
-                // 4. Adiciona ao mapa
-                newLayer.addTo(map);
-                if (typeof carFeatureGroup !== 'undefined') {
-                    carFeatureGroup.addLayer(newLayer);
-                    carFeatureGroup.bringToBack();
-                }
-
-                logEvento(f.name, 'carregamento', 'info', 'LOAD_CAR_OK', `Arquivo CAR carregado com código ${finalCarCode}.`);
-                resolve();
-            };
-
-            // É este o bloco que havia apagado sem querer na colagem anterior
-            if (ext === 'kml' || f.name.toLowerCase().endsWith('.kmz')) {
-                const r = new FileReader();
-                r.onload = e => {
-                    try {
-                        const dom = new DOMParser().parseFromString(e.target.result,'text/xml');
-                        success(toGeoJSON.kml(dom));
-                    } catch(err) { 
-                        errContainer.innerHTML = `<div class="error">Erro ao ler KML/KMZ.</div>`;
-                        resolve();
-                    }
-                };
-                r.readAsText(f);
-            } else if (ext === 'zip') {
-                const r = new FileReader();
-                r.onload = async e => {
-                    try {
-                        const zip = await JSZip.loadAsync(e.target.result);
-                        let innerZipEntry = null;
-                        zip.forEach((path, entry) => { if (path.endsWith("Area_do_Imovel.zip")) innerZipEntry = entry; });
-                        let buffer = innerZipEntry ? await innerZipEntry.async("arraybuffer") : e.target.result;
-                        const gj = await shp(buffer);
-                        success(gj);
-                    } catch (err) {
-                        errContainer.innerHTML = `<div class="error">Erro ao ler Shapefile no ZIP.</div>`;
-                        resolve();
-                    }
-                };
-                r.readAsArrayBuffer(f);
-            } else {
-                errContainer.innerHTML = `<div class="error">Formato não suportado.</div>`;
-                resolve();
             }
-        });
-    }
 
+            // 3. DEFINIÇÃO FINAL DO CÓDIGO (Sem prefixos ou cortes)
+            let finalCarCode;
+            if (validCode) {
+                finalCarCode = normalizeCarCode(validCode);
+            } else {
+                // Caso não seja um padrão de CAR, usa o nome do arquivo limpo
+                finalCarCode = f.name.split('.')[0].toUpperCase();
+            }
+
+            // Injeta o código nas geometrias para os balões do mapa
+            geojson.features.forEach(feat => {
+                if (!feat.properties) feat.properties = {};
+                feat.properties.cod_imovel_injetado = finalCarCode;
+            });
+            
+            const newLayer = L.geoJSON(geojson, {
+                style:{ color:'#b8860b', fillColor:'#ffd700', fillOpacity:0.3, opacity: 0.5, weight:1 },
+                onEachFeature: (feature, layer) => {
+                    const code = feature.properties.cod_imovel_injetado;
+                    const content = `
+                        <div class="p-2" style="min-width:160px">
+                            <b class="text-blue-800">Imóvel CAR:</b><br>
+                            <span class="text-[10px] font-mono">${code}</span><br><br>
+                            <button onclick="removeSingleCar('${code}')"
+                                    style="background-color:#dc2626 !important; color:white !important; padding:5px; width:100%; border-radius:4px; font-size:11px; cursor:pointer; border:none;">
+                                <i class="ph-trash"></i> Remover da Análise
+                            </button>
+                        </div>`;
+                    layer.bindPopup(content);
+                }
+            });
+
+            if (newLayer.getLayers().length === 0) {
+                errContainer.innerHTML = `<div class="error rounded-lg">AVISO: ${f.name} não contém geometrias.</div>`;
+                resolve();
+                return;
+            }
+
+            // Registra nos arrays de controle
+            if (!carCodes.includes(finalCarCode)) {
+                carCodes.push(finalCarCode);
+                carCodeFeatures.push(geojson.features[0]);
+                carProperties.push(mainProps); 
+                carCodeLayers.push(newLayer);
+            }
+
+            carLayers.push(newLayer); 
+            carFileNames.push(f.name);
+            newLayer.addTo(map);
+
+            logEvento(f.name, 'carregamento', 'info', 'LOAD_CAR_OK', `CAR carregado: ${finalCarCode}`);
+            resolve();
+        };
+
+        // Leitura de KML/ZIP...
+        if (ext === 'kml' || f.name.toLowerCase().endsWith('.kmz')) {
+            const r = new FileReader();
+            r.onload = e => {
+                try {
+                    const dom = new DOMParser().parseFromString(e.target.result,'text/xml');
+                    success(toGeoJSON.kml(dom));
+                } catch(err) { resolve(); }
+            };
+            r.readAsText(f);
+        } else if (ext === 'zip') {
+            const r = new FileReader();
+            r.onload = async e => {
+                try {
+                    const zip = await JSZip.loadAsync(e.target.result);
+                    let innerZipEntry = null;
+                    zip.forEach((path, entry) => { if (path.endsWith("Area_do_Imovel.zip")) innerZipEntry = entry; });
+                    let buffer = innerZipEntry ? await innerZipEntry.async("arraybuffer") : e.target.result;
+                    const gj = await shp(buffer);
+                    success(gj);
+                } catch (err) { resolve(); }
+            };
+            r.readAsArrayBuffer(f);
+        } else { resolve(); }
+    });
+}
     async function processMultipleCarFiles(files) {
         document.getElementById('error-container').innerHTML = 
             `<div class="error rounded-lg" style="background: #E0E7FF; color: #4F46E5; border-color: #A5B4FC;">Processando ${files.length} arquivo(s) CAR...</div>`;
@@ -9424,7 +9870,7 @@ document.getElementById('apply-correction-btn').addEventListener('click', async 
       processMultipleCarFiles(files);
     });
 
-    async function processMultipleGlebaFiles(files, includeManual = false, manualData = '') {
+   async function processMultipleGlebaFiles(files, includeManual = false, manualData = '') {
         document.getElementById('error-container').innerHTML = 
             `<div class="error rounded-lg" style="background: #E0E7FF; color: #4F46E5; border-color: #A5B4FC;">Processando ${files.length} arquivo(s) de gleba(s)...</div>`;
         
@@ -9709,7 +10155,6 @@ document.getElementById('apply-correction-btn').addEventListener('click', async 
             return Promise.resolve();
         }
     }
-
 
     document.getElementById('show-map-btn').addEventListener('click', ()=>{
       const files = document.getElementById('file-input').files;
