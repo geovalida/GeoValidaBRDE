@@ -8,20 +8,31 @@ async function searchSicarByBbox(glebaFeature) {
 
     // Calcula o BBOX da gleba
     const bbox = turf.bbox(glebaFeature);
-    const bboxParam = `${bbox[0]},${bbox[1]},${bbox[2]},${bbox[3]},EPSG:4326`;
+    // Para WFS 1.1.0, o padrão de BBOX é: minLon, minLat, maxLon, maxLat
+    const bboxParam = `${bbox[0]},${bbox[1]},${bbox[2]},${bbox[3]}`;
     
-    console.log(`[SICAR] Buscando CARs automáticos no BBOX: ${bboxParam}`);
+    console.log(`[SICAR] Buscando CARs automáticos via WFS 1.1.0 no BBOX: ${bboxParam}`);
 
     for (const uf of SUPPORTED_STATES_SICAR) {
         const typeName = `sicar:sicar_imoveis_${uf.toLowerCase()}`;
-        const wfsUrl = `https://geoserver.car.gov.br/geoserver/sicar/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=${typeName}&outputFormat=application/json&bbox=${bboxParam}&count=5`;
+        
+        // MUDANÇAS PARA VERSÃO 1.1.0:
+        // 1. version=1.1.0
+        // 2. typeName (sem o 's' no final)
+        // 3. maxFeatures em vez de count
+        // 4. Inclusão do srsName para garantir o alinhamento das coordenadas
+        const wfsUrl = `https://geoserver.car.gov.br/geoserver/sicar/wfs?service=WFS&version=1.1.0&request=GetFeature&typeName=${typeName}&outputFormat=application/json&srsName=EPSG:4326&bbox=${bboxParam},EPSG:4326&maxFeatures=5`;
 
         try {
+            // Usa o fallback para evitar erros de CORS
             const data = await fetchJsonWithCorsFallback(wfsUrl);
+            
             if (data && data.features && data.features.length > 0) {
                 data.features.forEach(feat => {
-                    const carCode = feat.properties.cod_imovel || feat.properties.COD_IMOVEL;
+                    const carCode = feat.properties.cod_imovel || feat.properties.COD_IMOVEL || feat.properties.num_certif;
                     
+                    if (!carCode) return;
+
                     // Se o CAR já estiver carregado oficialmente, ignora
                     if (carCodes.includes(normalizeCarCode(carCode))) return;
 
@@ -38,34 +49,47 @@ async function searchSicarByBbox(glebaFeature) {
 }
 
 // Desenha o contorno amarelo do CAR encontrado
+// Desenha o contorno amarelo do CAR encontrado
+// Desenha o contorno amarelo do CAR encontrado
 function drawCandidateCar(feature, carCode) {
     const layer = L.geoJSON(feature, {
-        style: { color: '#ffd700', weight: 3, fillOpacity: 0, dashArray: '5, 10' },
+        style: { 
+            color: '#ffd700', 
+            weight: 3, 
+            fillOpacity: 0, 
+            dashArray: '5, 10'
+        },
         onEachFeature: (feat, l) => {
             const popupContent = `
                 <div class="p-2 min-w-[150px]">
                     <b class="text-blue-800">CAR Localizado:</b><br>
                     <span class="text-xs font-mono">${carCode}</span><br><br>
-                    <button
-  class="btn-confirm-car bg-green-600 text-white text-xs px-2 py-1 rounded hover:bg-green-700 w-full mb-2"
-  data-car-code="${carCode}"
->
-  <i class="ph-check"></i> Sim, analisar
-</button>
-                    <button
-  class="btn-discard-car btn-secondary-gray text-white text-xs px-2 py-1 rounded w-full"
-  data-car-code="${carCode}"
->
-  <i class="ph-trash"></i> Descartar
-</button>
-
+                    <button class="btn-confirm-car bg-green-600 text-white text-xs px-2 py-1 rounded hover:bg-green-700 w-full mb-2" data-car-code="${carCode}">
+                        <i class="ph-check"></i> Sim, analisar
+                    </button>
+                    <button class="btn-discard-car btn-secondary-gray text-white text-xs px-2 py-1 rounded w-full" data-car-code="${carCode}">
+                        <i class="ph-trash"></i> Descartar
+                    </button>
                 </div>
             `;
             l.bindPopup(popupContent);
         }
     }).addTo(map);
+
+    // Pega as linhas desenhadas e diz pro Leaflet aumentar a sensibilidade do clique
+    layer.eachLayer(function(l) {
+        if (l.setStyle) {
+            // Desenha um "peso invisível" de 15px em volta da linha amarela de 3px
+            // Isso garante que mesmo sendo transparente no meio, o usuário acerte o clique
+            l.options.interactive = true; 
+            if (map.renderer && map.renderer.options) {
+                 map.renderer.options.tolerance = 15;
+            }
+        }
+    });
+
     candidateCarLayers.push({ carCode, layer });
-        validateAll(); // Força o botão de correção a ler que agora existe um candidato
+    validateAll(); // Força o botão de correção a ler que agora existe um candidato
 }
 
 
@@ -248,7 +272,7 @@ async function triggerBackgroundEnvironmentalAnalysis() {
         map.on('draw:deletestop', () => { editingModeActive = false; });
         map.on('draw:deleted', function(e) {
             // Para cada layer deletado, remover do glebaData e leafletGlebaLayers
-            if (e && e.layers) {
+            if (e && e.layers && typeof e.layers.eachLayer === 'function') {
                 e.layers.eachLayer(function(layer) {
                     const idx = leafletGlebaLayers.indexOf(layer);
                     if (idx !== -1) {
@@ -262,36 +286,26 @@ async function triggerBackgroundEnvironmentalAnalysis() {
 
 
 // Buscar embargos IBAMA via WFS e bbox
+// Buscar embargos IBAMA via WFS e bbox
 async function fetchIbamaEmbargosByBbox(bboxParam) {
-    // Monta URL direta do IBAMA
+    // URLs
     const directUrl = `https://siscom.ibama.gov.br/geoserver/ows?service=WFS&version=2.0.0&request=GetFeature&typeName=publica:vw_brasil_adm_embargo_a&outputFormat=application/json&bbox=${encodeURIComponent(bboxParam)}`;
-    // Monta URL do allorigins
     const alloriginsUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(directUrl)}`;
-    // URLs de fallback
     const localIbamaUrl = './ibama.json';
     const remoteIbamaUrl = 'https://validadorglebas.powerappsportals.com/GeoValidaBRDE/ibama.json';
-    let lastError = null;
-
+    
     // Função interna para processar resposta e adicionar ao mapa
-    async function processGeojsonResponse(response, bboxParam) {
+    async function processGeojsonResponse(response, bboxParam, metodoConsulta) {
         if (!response) return [];
         let geojson = { ...response };
-        // Limpeza de CRS para evitar conflitos no Leaflet
         if (geojson.crs) delete geojson.crs;
 
-        // Se for consulta local/remota, filtra pelo bbox
         if (geojson.features && geojson.features.length > 0 && bboxParam) {
-            console.log('[IBAMA][DEBUG] bboxParam recebido:', bboxParam);
-            console.log('[IBAMA][DEBUG] features carregadas antes do filtro:', geojson.features.length);
-            // bboxParam: "minX,minY,maxX,maxY,EPSG:4326"
             const bboxArr = bboxParam.split(',').map(Number);
-            console.log('[IBAMA][DEBUG] bboxArr:', bboxArr);
-            // Cria um polígono bbox
             let bboxPoly;
             try {
                 bboxPoly = turf.bboxPolygon([bboxArr[0], bboxArr[1], bboxArr[2], bboxArr[3]]);
             } catch (e) {
-                console.error('[IBAMA][DEBUG] Erro ao criar bboxPolygon:', e);
                 bboxPoly = null;
             }
             let countIntersect = 0;
@@ -301,26 +315,22 @@ async function fetchIbamaEmbargosByBbox(bboxParam) {
                     const intersects = bboxPoly ? turf.booleanIntersects(f, bboxPoly) : false;
                     if (intersects) countIntersect++;
                     return intersects;
-                } catch (e) {
-                    console.error(`[IBAMA][DEBUG] Erro no booleanIntersects da feature #${idx}:`, e, f);
-                    return false;
-                }
+                } catch (e) { return false; }
             });
-            console.log(`[IBAMA][DEBUG] features após filtro bbox: ${geojson.features.length} (intersectaram: ${countIntersect})`);
         }
 
         if (geojson.features && geojson.features.length > 0) {
-            window.ibamaQueryError = false;
-            console.log('[IBAMA] GeoJSON retornado:', geojson.features.length, 'features found.');
+            console.log(`[IBAMA] Sucesso! Consulta realizada com sucesso via: ${metodoConsulta}`);
             console.log(`[IBAMA] ${geojson.features.length} embargos adicionados à lista global.`);
-            // Limpa camadas anteriores do mapa
+            
             if (typeof ibamaLayers !== 'undefined') {
                 ibamaLayers.forEach(l => { if (map.hasLayer(l)) map.removeLayer(l); });
                 ibamaLayers = [];
             }
-            // Atualiza a variável global usada pelo PDF e Mapa
+            
             window.allIbamaEmbargos = geojson.features;
-            window.ibamaQueryError = false; // Sinaliza sucesso
+            window.ibamaQueryError = false; 
+            
             const layer = L.geoJSON(geojson, {
                 onEachFeature: function (feature, layer) {
                     layer.bindPopup('<b>Embargo IBAMA</b>');
@@ -333,62 +343,71 @@ async function fetchIbamaEmbargosByBbox(bboxParam) {
             if (typeof updateLegend === 'function') updateLegend();
             return geojson.features;
         } else {
-            console.log('[IBAMA] Nenhuma feature encontrada no bbox.');
+            console.log(`[IBAMA] Consulta via ${metodoConsulta} concluída, mas nenhum embargo intersecta o BBOX.`);
             return [];
         }
     }
 
-    // --- INÍCIO DA SEQÜÊNCIA DE TENTATIVAS ---
+    console.log('[IBAMA] === Iniciando rotina de consulta de Embargos ===');
 
     // 1. Tenta requisição direta
     try {
-        console.log('Buscando embargos IBAMA (direto):', directUrl);
+        console.log(`[IBAMA] 1. Tentando consulta via API Direta (WFS): ${directUrl}`);
         const resp = await fetch(directUrl);
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        if (!resp.ok) throw new Error(`Status HTTP ${resp.status} - O servidor rejeitou a conexão (possível bloqueio de CORS ou servidor fora do ar)`);
         const response = await resp.json();
-        return await processGeojsonResponse(response, bboxParam);
+        return await processGeojsonResponse(response, bboxParam, "API Direta (WFS)");
     } catch (err1) {
-        lastError = err1;
-        console.warn('Falha na requisição direta ao IBAMA, tentando via allorigins:', err1);
+        console.warn(`[IBAMA] Falha na consulta direta. Motivo: ${err1.message}`);
         
-        // 2. Tenta via allorigins
+        // 2. Tenta via proxy allorigins
         try {
+            console.log(`[IBAMA] 2. Tentando consulta via Proxy AllOrigins: ${alloriginsUrl}`);
             const resp2 = await fetch(alloriginsUrl);
-            if (!resp2.ok) throw new Error('HTTP ' + resp2.status);
+            if (!resp2.ok) throw new Error(`Status HTTP ${resp2.status} - O proxy falhou ao acessar o servidor do IBAMA`);
             const response2 = await resp2.json();
-            return await processGeojsonResponse(response2, bboxParam);
+            return await processGeojsonResponse(response2, bboxParam, "Proxy AllOrigins");
         } catch (err2) {
-            lastError = err2;
-            console.warn('Erro ao buscar embargos IBAMA via allorigins, tentando fallback local:', err2);
+            console.warn(`[IBAMA] Falha no Proxy AllOrigins. Motivo: ${err2.message}`);
             
             // 3. Fallback: tenta ibama.json local
             try {
+                console.log(`[IBAMA] 3. Tentando consulta via arquivo local: ${localIbamaUrl}`);
                 let respLocal = await fetch(localIbamaUrl);
-                let responseLocal = null;
                 if (respLocal.ok) {
-                    responseLocal = await respLocal.json();
+                    let responseLocal = await respLocal.json();
                     if (responseLocal && responseLocal.features) {
-                        return await processGeojsonResponse(responseLocal, bboxParam);
+                        return await processGeojsonResponse(responseLocal, bboxParam, "Arquivo Local (ibama.json)");
+                    } else {
+                        throw new Error("O arquivo ibama.json foi carregado, mas está vazio ou não possui formato GeoJSON válido.");
                     }
+                } else {
+                    throw new Error(`Arquivo ibama.json não encontrado no diretório raiz (Status: ${respLocal.status})`);
                 }
-                throw new Error('ibama.json local não disponível');
             } catch (errLocal) {
-                console.warn('Erro ao buscar ibama.json local, tentando remoto:', errLocal);
+                console.warn(`[IBAMA] Não foi possível consultar o arquivo local ibama.json. Motivo: ${errLocal.message}`);
                 
                 // 4. Fallback: tenta ibama.json remoto
                 try {
+                    console.log(`[IBAMA] 4. Tentando consulta via arquivo remoto (PowerPages): ${remoteIbamaUrl}`);
                     let respRemote = await fetch(remoteIbamaUrl);
                     if (respRemote.ok) {
                         let responseRemote = await respRemote.json();
                         if (responseRemote && responseRemote.features) {
-                            return await processGeojsonResponse(responseRemote, bboxParam);
+                            return await processGeojsonResponse(responseRemote, bboxParam, "Arquivo Remoto (ibama.json)");
+                        } else {
+                            throw new Error("O arquivo remoto ibama.json foi carregado, mas está vazio ou inválido.");
                         }
+                    } else {
+                        throw new Error(`Servidor remoto recusou a conexão ou arquivo não existe (Status: ${respRemote.status})`);
                     }
-                    throw new Error('ibama.json remoto não disponível');
                 } catch (errRemote) {
-                    console.error('Todas as tentativas de consulta ao IBAMA falharam.');
-                    window.ibamaQueryError = true; // SINALIZA ERRO PARA O MODAL
-                    return []; // Retorna array vazio para não quebrar o código
+                    console.warn(`[IBAMA] Não foi possível consultar o arquivo remoto ibama.json. Motivo: ${errRemote.message}`);
+                    
+                    // Se chegar aqui, tudo falhou.
+                    console.error('[IBAMA] === ERRO CRÍTICO: Todas as 4 tentativas de consulta ao IBAMA falharam ===');
+                    window.ibamaQueryError = true; 
+                    return []; 
                 }
             }
         }
@@ -466,7 +485,57 @@ async function fetchProdesPolygonalByBbox(bboxParam) {
   <script src="https://cdnjs.cloudflare.com/ajax/libs/wicket/1.3.8/wicket.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
+   /* Força toda a área do polígono a aceitar clique, mesmo sendo 100% transparente no meio */
+.leaflet-svg-pane path.leaflet-interactive {
+    pointer-events: all !important;
+    cursor: pointer !important;
+}
+    /* Restaura o clique APENAS nas formas geométricas, SICOR e CARs */
+path.leaflet-interactive,
+path.candidate-car-interactive,
+path.sicor-interactive {
+    pointer-events: auto !important;
+    cursor: pointer !important;
+}
+    /* Garante que os candidatos a CAR pontilhados sejam SEMPRE clicáveis e com o mouse certo */
+path.candidate-car-interactive {
+    pointer-events: auto !important;
+    cursor: pointer !important;
+}
+/* Restaura o clique APENAS nas formas geométricas (Glebas e CARs) */
+path.leaflet-interactive {
+    pointer-events: auto !important;
+    cursor: pointer !important;
+}
 /* 1. LAYOUT PRINCIPAL */
+/* Força os quadradinhos brancos de edição a aceitarem o mouse */
+.leaflet-editing-icon {
+    pointer-events: auto !important;
+    z-index: 10000 !important;
+}
+
+
+/* Impede que os nomes das glebas e tooltips bloqueiem o clique nos pontos */
+.leaflet-tooltip, .leaflet-tooltip-pane {
+    pointer-events: none !important;
+}
+
+/* Garante que o painel de desenho (SVG) não fique na frente dos marcadores */
+.leaflet-vml-container, .leaflet-svg-pane {
+    pointer-events: none !important;
+}
+
+/* Exceto se estivermos desenhando algo novo */
+.leaflet-draw-guide-dash {
+    pointer-events: none !important;
+}
+/* Previne que o html2canvas desalinhe as camadas de SVG (CAR) e os Tiles */
+.leaflet-tile-container {
+    pointer-events: none;
+}
+.leaflet-vml-container, .leaflet-svg-pane, .leaflet-marker-pane, .leaflet-tooltip-pane {
+    z-index: 1000 !important;
+}
 .main-container { max-width: 100% !important; padding: 0 40px !important; }
 
 .gv-dashboard-wrapper { 
@@ -530,15 +599,20 @@ async function fetchProdesPolygonalByBbox(bboxParam) {
     cursor: pointer !important;
     font-size: 20px !important;
     z-index: 9999 !important; /* À frente de tudo */
-    border: 1px solid #e2e8f0;
+    border: 1px solid #121212;
+    overflow: visible !important; 
 }
-.toggle-sidebar-btn:hover { background: #e2e8f0 !important; color: #1e293b !important; }
-
+.toggle-sidebar-btn:hover { background: #8a9c8b !important; color: #0e1625 !important; }
+#toggle-icon {
+    font-weight: bold !important; /* Deixa a seta mais grossa */
+    color: #1e293b !important;   /* Cor cinza chumbo bem visível */
+    display: inline-block !important;
+}
 /* 3. TEXTO DO CAR (Encostando na margem sem quebrar) */
 .side-card-header b {
     font-size: 10.8px !important; /* Tamanho calculado para o código oficial */
     letter-spacing: -0.4px !important; /* Aperta as letras para caber na linha */
-    color: #1e40af;
+    color: #060606;
     display: block;
     width: 100%;
     white-space: nowrap; 
@@ -572,11 +646,10 @@ async function fetchProdesPolygonalByBbox(bboxParam) {
 
 .side-data-row {
     display: flex;
-    justify-content: space-between;
-    font-size: 14px !important; /* Informações maiores */
-    margin-bottom: 5px;
+    justify-content: flex-start;
+    font-size: 13px !important; /* Informações maiores */
+    margin-bottom: 4px;
 }
-
 
 
 /* Custom Scrollbar */
@@ -586,9 +659,8 @@ async function fetchProdesPolygonalByBbox(bboxParam) {
 .side-card-car { border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; margin-bottom: 20px; background: #fff; }
 .side-card-header { background: #f8fafc; padding: 15px; border-bottom: 1px solid #e2e8f0; }
 .side-card-header p { font-size: 11px; color: #64748b; font-weight: 800; }
-.side-card-header b { font-size: 13px; color: #1e40af; font-family: monospace; }
 
-.side-data-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
+
 .side-data-row span { color: #64748b; }
 .side-data-row b { color: #1e293b; }
 
@@ -978,114 +1050,200 @@ async function fetchProdesPolygonalByBbox(bboxParam) {
 }
 </style>
 </head>
-<body class="p-0">
-     <!-- NOVO CABEÇALHO -->
-<header class="bg-[#006837] text-white shadow-md mb-8">
-    <div class="max-w-[1200px] mx-auto px-4 py-5 flex justify-between items-center">
-        <!-- Logo e Título (Sem a bolinha branca) -->
-        <div class="flex items-center">
-            <div>
-                <h1 class="font-bold text-2xl leading-none tracking-tight">GeoValida BRDE</h1>
-                <p class="text-[10px] uppercase tracking-[0.15em] font-bold opacity-90 mt-1">Sistema de Validação Geoespacial e Análise Ambiental</p>
+<!-- Corpo modificado para layout de tela inteira sem rolagem global -->
+<body class="p-0 flex flex-col h-screen overflow-hidden bg-slate-50">
+    
+<!-- NOVO CABEÇALHO (Mais fino, fontes menores, estilo Enterprise) -->
+<header class="bg-[#006837] text-white shadow-md z-50 shrink-0">
+    <div class="w-full mx-auto px-4 py-2 flex justify-between items-center">
+        
+        <!-- LADO ESQUERDO: Home + Menu + Logo -->
+        <div class="flex items-center gap-3">
+            <!-- Botão Home -->
+            <a href="home.html" title="Página Inicial" class="flex items-center justify-center p-1.5 rounded bg-[#005d3b] hover:bg-[#004b23] transition-colors border border-[#004b23]">
+                <i class="ph-bold ph-house text-lg"></i>
+            </a>
+            
+            <!-- Botão Menu Hambúrguer -->
+            <button onclick="toggleMainMenu()" title="Abrir/Fechar Menu" class="flex items-center justify-center p-1.5 rounded bg-[#005d3b] hover:bg-[#004b23] transition-colors border border-[#004b23]">
+                <i class="ph-bold ph-list text-lg"></i>
+            </button>
+
+            <!-- Título do Sistema -->
+            <div class="ml-2 flex flex-col justify-center">
+                <div class="flex items-center gap-2">
+                    <h1 class="font-bold text-lg leading-none tracking-tight">GeoValida</h1>
+                </div>
+                <p class="text-[9px] text-emerald-100/80 uppercase tracking-widest font-semibold mt-0.5">Sistema de Validação Geoespacial e Análise Ambiental</p>
             </div>
         </div>
 
-        <!-- Navegação Central -->
-        <!--desabilitado  <nav class="hidden md:flex gap-8 items-center text-sm font-medium">-->
-            
-    <!--desabilitado <a href="#" class="header-nav-link">Início</a> -->
-         <!--desabilitado <a href="#" class="header-nav-link">Documentação</a> -->
-        <!--desabilitado
-      <a href="#" class="header-nav-link">Suporte</a>  -->
-        </nav>
-
-        <!-- Botão Ação -->
-        <button onclick="window.location.reload()" class="bg-[#004b23] hover:bg-[#00361a] transition-colors px-5 py-2 rounded-full text-sm font-semibold flex items-center gap-2 shadow-inner">
-            <i class="ph-map-pin-fill"></i> Nova Análise
+        <!-- LADO DIREITO: Botão Nova Análise -->
+        <button onclick="window.location.reload()" class="bg-[#004b23] hover:bg-[#00361a] transition-colors px-3 py-1.5 rounded text-xs font-semibold flex items-center gap-2 shadow-inner">
+            <i class="ph-bold ph-map-pin-fill"></i> <span class="hidden md:inline">Nova Análise</span>
         </button>
     </div>
 </header>
 
-  <div class="main-container">
+    <!-- MAIN CONTAINER (SIDEBAR + CONTENT) -->
+    <div class="flex flex-1 overflow-hidden">
+        
+        <!-- SIDEBAR DE NAVEGAÇÃO GLOBAL -->
+ <!-- MAIN CONTAINER (SIDEBAR + CONTENT) -->
+    <!-- flex-1 faz ocupar o resto da tela, overflow-hidden impede que a tela toda role -->
+    <div class="flex flex-1 overflow-hidden relative w-full">
+        
+        <!-- SIDEBAR DE NAVEGAÇÃO GLOBAL -->
+        <!-- O '-ml-64' esconde o menu. O 'transition-all' faz o efeito suave de deslizar -->
+        <!-- SIDEBAR DE NAVEGAÇÃO GLOBAL -->
+<aside id="main-sidebar" class="w-72 -ml-72 bg-[#0e1625] text-slate-300 flex flex-col justify-between shadow-2xl z-40 shrink-0 transition-all duration-300 ease-in-out border-r border-slate-800">
     
-    <!-- Container para mensagens de sucesso (fica no topo, acima de tudo) -->
-    <div id="top-message-container" class="mb-4"></div>
-    
-<div id="controls" class="mb-8 rounded-lg overflow-hidden" style="background-color: #f8fafc;">
-      <!-- Cabeçalho Cinza (Igual ao summary do Contrato) -->
-      <div class="p-4 bg-gray-100 border-b border-gray-200 flex items-center">
-        <i class="ph-database text-2xl mr-2 text-green-700"></i>
-        <h3 class="text-xl font-semibold text-gray-700">Entrada de Dados Geoespaciais</h3>
-      </div>
+    <!-- ÁREA ROLÁVEL DO MENU (Aqui fica os módulos e o resumo) -->
+    <div class="flex-1 overflow-y-auto custom-scrollbar flex flex-col">
+        
+        <!-- Bloco 1: Módulos Originais -->
+        <div id="default-sidebar-content">
+            <div class="px-4 py-3 border-b border-slate-800/50 flex justify-between items-center">
+                <p class="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Módulos do Sistema</p>
+                <button onclick="toggleMainMenu()" class="text-slate-500 hover:text-white"><i class="ph-bold ph-x text-base"></i></button>
+            </div>
+            <nav class="p-2 space-y-1">
+                <button id="btn-geovalida" onclick="switchTab('geovalida')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded text-sm font-medium transition-all bg-emerald-600/10 text-emerald-400 border border-emerald-500/20">
+                    <i class="ph-bold ph-map-trifold text-lg"></i>
+                    <span>Validação Geográfica</span>
+                </button>
+                <button id="btn-dashboard" onclick="switchTab('dashboard')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded text-sm font-medium transition-all hover:bg-slate-800/50 text-slate-400 hover:text-slate-200">
+                    <i class="ph-bold ph-chart-pie-slice text-lg"></i>
+                    <span>Análise da Carteira (em breve)</span>
+                </button>
+            </nav>
+            
 
-      <!-- Corpo da Caixa com Padding generoso (p-8) -->
-      <div class="p-8 space-y-8">
-
-        <!-- Seção 1: CAR (Código + Arquivo + Botão) -->
-        <div class="mb-8">
-          <label class="font-bold block mb-0 text-slate-800 text-lg">1. Consultar CAR pelo código ou arquivo</label>
-          <p class="text-xs text-gray-500 mb-3">Digite o código do CAR ou envie o(s) arquivo(s) em formato .kml ou .zip e clique em <strong>Carregar CAR(s)</strong>.</p>
-          <div class="flex flex-col md:flex-row gap-4 items-stretch">
-            <input type="text" id="car-code-input" placeholder="Ex: MS-XXXX, MT-YYYY" class="flex-1 p-2.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 outline-none placeholder-muted"/>
-            <input type="file" id="car-input" accept=".kml,.zip" multiple class="flex-1 p-1.5 border border-gray-300 rounded-md bg-white text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200 cursor-pointer"/>
-            <button id="search-car-btn" class="md:w-auto px-8 bg-[#15803d] hover:bg-[#166534] text-white font-bold rounded-md transition-all">
-              Carregar CAR(s)
-            </button>
-          </div>
-          <!-- Botão upload oculto para manter compatibilidade com o script antigo se necessário -->
-          <button id="upload-car-btn" class="hidden"></button>
-
-          <!-- LISTA E BOTÃO MOVIDOS PARA CÁ (Para reduzir o espaço) -->
-          <button id="clear-car-btn" class="w-full md:w-48 btn-clear justify-start mt-2" style="display:none">
-               <i class="ph-trash"></i> Limpar CAR(s)
-          </button>
-          <div id="car-list-container" class="mt-4 p-3 border border-gray-100 rounded-lg bg-gray-50 hidden">
-                  <h4 class="font-semibold mb-2 text-slate-800 flex items-center">
-                          <i class="ph-list-checks text-xl mr-2 text-green-600"></i> CAR(s) Carregados:
-                  </h4>
-                  <ul id="loaded-car-list" class="list-none ml-0 space-y-1 text-sm text-gray-600">
-                          <li>Nenhum CAR carregado.</li>
-                  </ul>
-          </div>
         </div>
 
-        <!-- Seção 2: Glebas (Arquivo + Botão) -->
-        <div class="mb-8">
-          <label class="font-bold block mb-4 text-slate-800 text-lg">2. Escolha o arquivo de Glebas (.txt, .kml, .xls, .xlsx ou .xlsm):</label>
-          <div class="flex flex-col md:flex-row gap-4 items-stretch">
-            <input accept=".txt,.kml,.xls,.xlsx,.xlsm" id="file-input" type="file" class="p-1.5 border border-gray-300 rounded-md bg-white text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200 cursor-pointer flex-[3]" multiple/>
-            <button id="show-map-btn" class="md:w-auto px-8 bg-[#15803d] hover:bg-[#166534] text-white font-bold rounded-md transition-all">
-              Carregar Glebas
-            </button>
-          </div>
-
-          <!-- LISTA E BOTÃO MOVIDOS PARA CÁ -->
-          <button id="clear-glebas-btn" class="w-full md:w-48 btn-clear justify-start mt-2" style="display:none">
-             <i class="ph-trash"></i> Limpar Glebas
-          </button>
-          <div id="gleba-list-container" class="mt-4 p-3 border border-gray-100 rounded-lg bg-gray-50 hidden">
-              <h4 class="font-semibold mb-2 text-slate-800 flex items-center">
-                  <i class="ph-list-checks text-xl mr-2 text-green-600"></i> Glebas Carregadas:
-              </h4>
-              <ul id="loaded-gleba-list" class="list-none ml-0 space-y-1 text-sm text-gray-600">
-                  <li>Nenhuma gleba carregada.</li>
-              </ul>
-          </div>
+        <!-- Bloco 2: O NOVO RESUMO DA ANÁLISE (Inicia Oculto) -->
+        <div id="sidebar-summary-container" class="hidden flex-col mt-4 border-t border-slate-800/50 bg-[#131d2f] flex-1">
+            <div class="px-4 py-3 border-b border-slate-800/50 flex items-center gap-2 sticky top-0 bg-[#131d2f] z-10">
+                <i class="ph-bold ph-activity text-emerald-400 text-base"></i>
+                <h3 class="font-bold text-slate-200 text-xs uppercase tracking-widest">Resumo da Análise</h3>
+            </div>
+            <!-- O JavaScript vai injetar os cards escuros aqui dentro -->
+            <div id="side-panel-content" class="p-2 flex-1"></div>
         </div>
-
-      <!-- Linha 3: Input Manual -->
-      <div>
-        <label class="font-bold block mb-2 text-slate-800">Ou digite os pontos manualmente (Em formato decimal ou GSM) e clique no botão "Mostrar Glebas":</label>
-          <textarea id="manual-input" placeholder="Digite ou cole aqui #Gleba #Ponto #Latitude #Longitude #Altitude.
-Exemplos:
-1 1 -25.730022 -49.270000 0 (Decimal)
-1 2 25°43'52,00 49°16'15,00 0 (GSM)
-1 3 25730022 49270000 0 (2 dígitos inteiros)" 
-class="p-2 border border-gray-300 rounded-md bg-white placeholder-muted"></textarea>
-      </div>
 
     </div>
 
+    <!-- FOOTER FIXO NO FINAL DO MENU -->
+    <div class="p-3 border-t border-slate-800/80 text-[9px] text-slate-500 text-center shrink-0 bg-[#0a101a]">
+        <p class="font-bold text-slate-400 tracking-widest uppercase">BRDE</p>
+        <p class="mt-0.5">© 2026 GeoValida Enterprise</p>
+    </div>
+</aside>
+
+        <!-- ÁREA DO CONTEÚDO PRINCIPAL -->
+        <!-- overflow-y-auto faz SÓ esta parte rolar, mantendo o topo fixo -->
+        <div class="main-container flex-1 overflow-y-auto w-full h-full relative pt-6 pb-12 custom-scrollbar">
+            
+            <!-- Container para mensagens de sucesso (fica no topo) -->
+            <div id="top-message-container" class="mb-4"></div>
+
+      <div class="p-6 space-y-6">
+<!-- Container unificado para garantir que todos os blocos tenham a mesma largura e espaçamento -->
+<div class="space-y-8 w-full">
+
+    <!-- CARD DE INTEGRAÇÃO COM BACKEND (BRDE) -->
+     <!-- card oculto temporariamente até ser implantado o backend-->
+    <!-- <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+        <h3 class="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
+            <i class="ph-bold ph-database text-emerald-600"></i> Consultar Contrato da Carteira BRDE
+        </h3>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <div>
+                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Agência</label>
+                <select id="api-agencia" class="w-full p-2 bg-slate-50 border rounded-lg text-sm font-bold">
+                    <option value="01">01 - Curitiba</option>
+                    <option value="02">02 - Florianópolis</option>
+                    <option value="03">03 - Porto Alegre</option>
+                </select>
+            </div>
+            <div class="md:col-span-2">
+                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nº Contrato</label>
+                <input type="text" id="api-contrato" placeholder="Ex: 70120" class="w-full p-2 bg-slate-50 border rounded-lg text-sm font-bold">
+            </div>
+            <button onclick="sincronizarComBackend()" class="bg-[#005d3b] hover:bg-emerald-800 text-white py-2 rounded-lg font-bold text-sm shadow-lg transition-all flex items-center justify-center gap-2">
+                <i class="ph-bold ph-cloud-arrow-down"></i> Buscar Contrato
+            </button>
+        </div>
+    </div>
+
+    <div id="top-message-container"></div>
+
+    <!-- Seção 1: CAR (Código + Arquivo + Botão) -->
+    <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+        <label class="font-bold block mb-0 text-slate-800 text-lg">1. Consultar CAR pelo código ou arquivo</label>
+        <p class="text-xs text-gray-500 mb-3">Digite o código do CAR ou envie o(s) arquivo(s) em formato .kml ou .zip e clique em <strong>Carregar CAR(s)</strong>.</p>
+        <div class="flex flex-col md:flex-row gap-4 items-stretch">
+            <input type="text" id="car-code-input" placeholder="Ex: MS-XXXX, MT-YYYY" class="flex-1 p-2.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 outline-none placeholder-muted"/>
+            <input type="file" id="car-input" accept=".kml,.zip" multiple class="flex-1 p-1.5 border border-gray-300 rounded-md bg-white text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200 cursor-pointer"/>
+            <button id="search-car-btn" class="md:w-auto px-8 bg-[#15803d] hover:bg-[#166534] text-white font-bold rounded-md transition-all">
+                Carregar CAR(s)
+            </button>
+        </div>
+        
+        <button id="upload-car-btn" class="hidden"></button>
+
+        <!-- Botão Limpar e Lista CAR -->
+        <button id="clear-car-btn" class="w-full md:w-48 btn-clear justify-start mt-2" style="display:none">
+            <i class="ph-trash"></i> Limpar CAR(s)
+        </button>
+        <div id="car-list-container" class="mt-4 p-3 border border-gray-100 rounded-lg bg-gray-50 hidden">
+            <h4 class="font-semibold mb-2 text-slate-800 flex items-center">
+                <i class="ph-list-checks text-xl mr-2 text-green-600"></i> CAR(s) Carregados:
+            </h4>
+            <ul id="loaded-car-list" class="list-none ml-0 space-y-1 text-sm text-gray-600">
+                <li>Nenhum CAR carregado.</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Seção 2: Glebas (Arquivo + Digitação Manual integrados) -->
+    <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+        <label class="font-bold block mb-4 text-slate-800 text-lg">2. Escolha o arquivo de Glebas (.txt, .kml, .xls, .xlsx ou .xlsm):</label>
+        
+        <!-- Parte Superior: Upload -->
+        <div class="flex flex-col md:flex-row gap-4 items-stretch">
+            <input accept=".txt,.kml,.xls,.xlsx,.xlsm" id="file-input" type="file" class="p-1.5 border border-gray-300 rounded-md bg-white text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200 cursor-pointer flex-[3]" multiple/>
+            <button id="show-map-btn" class="md:w-auto px-8 bg-[#15803d] hover:bg-[#166534] text-white font-bold rounded-md transition-all">
+                Carregar Glebas
+            </button>
+        </div> <!-- FECHAMENTO CORRIGIDO DA DIV DO FLEX -->
+
+        <!-- Botão Limpar e Lista Glebas -->
+        <button id="clear-glebas-btn" class="w-full md:w-48 btn-clear justify-start mt-2" style="display:none">
+            <i class="ph-trash"></i> Limpar Glebas
+        </button>
+        <div id="gleba-list-container" class="mt-4 p-3 border border-gray-100 rounded-lg bg-gray-50 hidden">
+            <h4 class="font-semibold mb-2 text-slate-800 flex items-center">
+                <i class="ph-list-checks text-xl mr-2 text-green-600"></i> Glebas Carregadas:
+            </h4>
+            <ul id="loaded-gleba-list" class="list-none ml-0 space-y-1 text-sm text-gray-600">
+                <li>Nenhuma gleba carregada.</li>
+            </ul>
+        </div>
+
+        <!-- Divisor com margem grande para separar o upload da digitação -->
+        <div class="mt-8 pt-6 border-t border-gray-200"></div>
+
+        <!-- Parte Inferior: Digitação Manual (Agora dentro do Cartão 2) -->
+        <div>
+            <label class="block text-gray-700 font-medium mb-3">Ou digite os pontos manualmente (Em formato decimal ou GSM) e clique no botão "Mostrar Glebas":</label>
+            <textarea id="manual-input" rows="5" placeholder="Digite ou cole aqui #Gleba #Ponto #Latitude #Longitude #Altitude.&#10;Exemplos:&#10;1 1 -25.730022 -49.270000 0 (Decimal)&#10;1 2 25°43'52,00 49°16'15,00 0 (GSM)&#10;1 3 25730022 49270000 0 (2 dígitos inteiros)" 
+            class="w-full p-3 border border-gray-300 rounded-md bg-white focus:ring-2 focus:ring-green-500 outline-none placeholder-muted"></textarea>
+        </div>
+
+    </div>
+
+</div>
     <!-- Container de Erros (ACIMA DO MAPA) -->
     <div id="error-container" class="mb-4"></div>
     
@@ -1105,16 +1263,14 @@ class="p-2 border border-gray-300 rounded-md bg-white placeholder-muted"></texta
     </div>
     
     <!-- Mapa -->
-<div class="gv-dashboard-wrapper">
-    <!-- CENTRO: MAPA -->
-    <div class="gv-map-area">
-        <div id="map"></div>
-        
+<!-- Mapa (Ocupando 100% da largura agora) -->
+    <div class="w-full mb-8 relative z-10">
+        <div id="map" class="h-[600px] w-full rounded-xl border border-slate-200 shadow-sm bg-[#e2e8f0]"></div>
     </div>
 
     <!-- DIREITA: PAINEL DE CONTROLE E STATUS -->
  <aside id="side-panel">
-    <div class="toggle-sidebar-btn" onclick="toggleSidebar()"><i id="toggle-icon" class="ph-caret-double-right-fill"></i></div>
+    <div class="toggle-sidebar-btn" onclick="toggleSidebar()"><i id="toggle-icon" class="ph ph-caret-right"></i></div>
     <div id="side-panel-header" class="mb-4">
         <h3 class="font-bold text-slate-800 flex items-center gap-2 border-b pb-2">
             <i class="ph-activity text-green-600 text-xl"></i> Resumo da Análise
@@ -1344,7 +1500,6 @@ class="p-2 border border-gray-300 rounded-md bg-white placeholder-muted"></texta
 <!-- Conteúdo do Relatório -->
    <div class="report-body">
     
-    <!-- Tab: Análise Ambiental (Mantida como primeira aba conforme seu fluxo) -->
        <div class="tab-panel" id="tab-ambiental">
            <div id="environmental-content-unified">
             <!-- Conteúdo da análise ambiental injetado via JS -->
@@ -1354,11 +1509,10 @@ class="p-2 border border-gray-300 rounded-md bg-white placeholder-muted"></texta
     <!-- Tab: Linha do Tempo e Validações (UNIFICADA COM RESUMO) -->
        <div class="tab-panel hidden" id="tab-timeline">
         
-        <!-- NOVO: Container do Resumo com a "linha envolta" (summary-wrapper) -->
+        <!--  Container do Resumo com a "linha envolta" (summary-wrapper) -->
            <h4 class="text-lg font-semibold mb-3 text-slate-800">Métricas e Resumo da Sessão</h4>
            <div id="resumo-cards" class="summary-wrapper mb-6">
             <!-- Os cards de Status, Área e Extravasamento serão injetados aqui via JS -->
-            <!-- Certifique-se de que o CSS .summary-wrapper tenha a borda conforme solicitado -->
            </div>
 
            <h4 class="text-lg font-semibold mb-3 text-slate-800">1. Eventos de Carregamento e Inicialização</h4>
@@ -1404,6 +1558,21 @@ class="p-2 border border-gray-300 rounded-md bg-white placeholder-muted"></texta
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
   <script>
+    // Função para Abrir/Fechar o Menu Lateral Principal
+function toggleMainMenu() {
+    const sidebar = document.getElementById('main-sidebar');
+    
+    // Tira ou coloca a classe '-ml-64' que esconde o menu pra esquerda
+    sidebar.classList.toggle('-ml-72');
+    
+    // Se o mapa do Leaflet estiver renderizado, precisamos avisar ele
+    // que o tamanho da tela mudou, para ele não ficar distorcido.
+    setTimeout(() => {
+        if (typeof map !== 'undefined' && map) {
+            map.invalidateSize();
+        }
+    }, 300); // 300ms é o tempo exato da transição do CSS
+}
     // Tradução do Leaflet.Draw para Português
     L.drawLocal = {
         draw: {
@@ -1711,7 +1880,7 @@ function resetGlebas() {
                     Object.keys(rawData).forEach(key => {
                         const normalizedKey = normalizeCarCode(key);
                         let entry = { ...rawData[key] };
-                        // Renomeia campos conforme solicitado
+                        // Renomeia campos
                         if (entry['Tolerância Aplicada'] !== undefined) {
                             entry['criterio_aplicado'] = entry['Tolerância Aplicada'];
                             delete entry['Tolerância Aplicada'];
@@ -1964,7 +2133,7 @@ function extractCarCodeFromFilename(filename) {
     }
 
     // Buscar PRODES específico para o CAR (usa bioma do JSON e bbox do CAR)
-    async function fetchProdesForCar(feature, prodesData) {
+    async function fetchProdesForCar(feature,   prodesData) {
         const bioma = prodesData && prodesData.bioma ? prodesData.bioma : null;
         const layerName = getProdesLayerNameFromBioma(bioma) || 'prodes-cerrado-nb';
         const bboxParam = getBboxParamFromFeature(feature);
@@ -1976,43 +2145,32 @@ function extractCarCodeFromFilename(filename) {
 
     // Tenta um fetch normal e, em caso de falha (CORS, etc), tenta um proxy 'AllOrigins' como fallback.
     async function fetchJsonWithCorsFallback(url, options = {}) {
-        // 1. Tenta fetch direto
-        try {
-            const response = await fetch(url, options);
-            if (response.ok) return await response.json();
-            throw new Error(`HTTP ${response.status}`);
-        } catch (err1) {
-            console.warn('[CORS Fallback] Fetch direto falhou:', err1);
-            // 2. Tenta via AllOrigins
-            try {
-                const allOriginsUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-                const response2 = await fetch(allOriginsUrl);
-                if (response2.ok) return await response2.json();
-                throw new Error(`AllOrigins HTTP ${response2.status}`);
-            } catch (err2) {
-                console.warn('[CORS Fallback] AllOrigins falhou:', err2);
-                // 3. Tenta via corsproxy.io
-                try {
-                    const corsProxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
-                    const response3 = await fetch(corsProxyUrl);
-                    if (response3.ok) return await response3.json();
-                    throw new Error(`corsproxy.io HTTP ${response3.status}`);
-                } catch (err3) {
-                    console.error('[CORS Fallback] corsproxy.io falhou:', err3);
-                    // 4. Tenta via thingproxy
-                    try {
-                        const thingProxyUrl = `https://thingproxy.freeboard.io/fetch/${url}`;
-                        const response4 = await fetch(thingProxyUrl);
-                        if (response4.ok) return await response4.json();
-                        throw new Error(`thingproxy HTTP ${response4.status}`);
-                    } catch (err4) {
-                        console.error('[CORS Fallback] thingproxy falhou:', err4);
-                        throw new Error(`Todas as tentativas de fetch falharam.\nErros:\n- direto: ${err1}\n- AllOrigins: ${err2}\n- corsproxy.io: ${err3}\n- thingproxy: ${err4}`);
-                    }
-                }
-            }
-        }
-    }
+    // Adiciona um timestamp para evitar cache de erro do servidor
+    const separator = url.includes('?') ? '&' : '?';
+    const finalUrl = `${url}${separator}_=${new Date().getTime()}`;
+
+    // 1. Tenta direto (mais rápido se o servidor estiver bom)
+    try {
+        const response = await fetch(finalUrl, options);
+        if (response.ok) return await response.json();
+    } catch (err) {}
+
+    // 2. Tenta via AllOrigins (Proxy mais robusto)
+    try {
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(finalUrl)}`;
+        const response = await fetch(proxyUrl);
+        if (response.ok) return await response.json();
+    } catch (err) {}
+
+    // 3. Tenta via proxy secundário (apenas se o anterior falhar)
+    try {
+        const proxyUrl2 = `https://worker-proxy.cors-anywhere.workers.dev/?${finalUrl}`; // Proxy alternativo
+        const response = await fetch(proxyUrl2);
+        if (response.ok) return await response.json();
+    } catch (err) {}
+
+    throw new Error('Todas as tentativas de conexão com o SICAR falharam. O servidor do Governo pode estar fora do ar.');
+}
 
     // Buscar PRODES por bioma (consulta geral com bbox opcional, maxFeatures e ano)
     async function fetchProdesByBioma(bioma, bbox = null, maxFeatures = 100, year = null) {
@@ -2028,29 +2186,70 @@ function extractCarCodeFromFilename(filename) {
 
     // Buscar um único CAR
     async function fetchSingleCar(carCode) {
-        const normalizedCode = normalizeCarCode(carCode);
+    const normalizedCode = normalizeCarCode(carCode);
 
-        // Detectar estado a partir do código
-        const state = normalizedCode.split('-')[0];
-        if (!state || state.length !== 2) {
-            throw new Error('Estado não suportado ou código inválido.');
+    // Detectar estado a partir do código
+    const state = normalizedCode.split('-')[0];
+    if (!state || state.length !== 2) {
+        throw new Error('Estado não suportado ou código inválido.');
+    }
+
+    // Define o nome da camada conforme o padrão do SICAR
+    const layerName = `sicar:sicar_imoveis_${state.toLowerCase()}`;
+
+    // Monta o filtro CQL
+    const cqlFilter = encodeURIComponent(`cod_imovel='${normalizedCode}'`);
+    
+    // URL WFS Oficial
+    const wfsUrl = `https://geoserver.car.gov.br/geoserver/sicar/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=${layerName}&outputFormat=application/json&CQL_FILTER=${cqlFilter}`;
+
+    console.log('[SICAR] Consultando URL:', wfsUrl);
+
+    try {
+        // --- ALTERAÇÃO CRUCIAL: Usar o Fallback com Proxy (CORS) ---
+        const geojson = await fetchJsonWithCorsFallback(wfsUrl);
+
+        if (!geojson || !geojson.features || geojson.features.length === 0) {
+            // Tentativa secundária: Alguns estados usam a propriedade num_certif em vez de cod_imovel
+            const altFilter = encodeURIComponent(`num_certif='${normalizedCode}'`);
+            const altUrl = wfsUrl.replace(cqlFilter, altFilter);
+            const altGeojson = await fetchJsonWithCorsFallback(altUrl);
+            
+            if (altGeojson && altGeojson.features && altGeojson.features.length > 0) {
+                return processCarFeature(altGeojson.features[0], normalizedCode);
+            }
+            
+            throw new Error('CAR não encontrado na base do Governo.');
         }
 
-        // Suporta qualquer estado; assume camada padrão do geoserver com nome sicar_imoveis_<uf>
-        const layerName = `sicar_imoveis_${state.toLowerCase()}`;
+        return processCarFeature(geojson.features[0], normalizedCode);
 
-        // Construir URL WFS (usando encodeURIComponent para evitar problemas com caracteres especiais)
-        const cqlFilter = encodeURIComponent(`cod_imovel='${normalizedCode}'`);
-        const wfsUrl = `https://geoserver.car.gov.br/geoserver/sicar/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=sicar:${layerName}&outputFormat=application/json&CQL_FILTER=${cqlFilter}`;
+    } catch (error) {
+        console.error(`[SICAR] Erro na requisição para ${normalizedCode}:`, error);
+        throw new Error(`Servidor SICAR retornou erro (Provavelmente indisponibilidade momentânea).`);
+    }
+}async function fetchSingleCar(carCode) {
+    const normalizedCode = normalizeCarCode(carCode);
 
-        console.log('Buscando CAR:', wfsUrl);
+    // Detectar estado a partir do código
+    const state = normalizedCode.split('-')[0];
+    if (!state || state.length !== 2) {
+        throw new Error('Estado não suportado ou código inválido.');
+    }
 
-        const response = await fetch(wfsUrl);
-        if (!response.ok) {
-            throw new Error(`Erro na requisição: ${response.status}`);
-        }
+    // Suporta qualquer estado; assume camada padrão do geoserver com nome sicar_imoveis_<uf>
+    const layerName = `sicar:sicar_imoveis_${state.toLowerCase()}`;
 
-        const geojson = await response.json();
+    // Construir URL WFS - MUDANÇA PARA VERSÃO 1.1.0 PARA EVITAR ERRO DE JAVA DO GOVERNO
+    const cqlFilter = encodeURIComponent(`cod_imovel='${normalizedCode}'`);
+    const wfsUrl = `https://geoserver.car.gov.br/geoserver/sicar/wfs?service=WFS&version=1.1.0&request=GetFeature&typeName=${layerName}&outputFormat=application/json&CQL_FILTER=${cqlFilter}`;
+
+    console.log('Buscando CAR (Tentativa Versão 1.1.0):', wfsUrl);
+
+    try {
+        // Sugestão: usar o fallback que você já tem no código para evitar bloqueio de CORS
+        const geojson = await fetchJsonWithCorsFallback(wfsUrl);
+        
         console.log('Resposta CAR:', geojson);
 
         if (!geojson.features || geojson.features.length === 0) {
@@ -2059,19 +2258,16 @@ function extractCarCodeFromFilename(filename) {
 
         const carFeature = geojson.features[0];
         
-        // Validar se o feature tem geometria válida
+        // Validar se o feature tem geometria válida (Mantido conforme seu original)
         if (!carFeature.geometry || !carFeature.geometry.coordinates) {
             console.error('Feature CAR inválido:', carFeature);
             throw new Error('CAR encontrado, mas sem geometria válida.');
         }
 
+        // Logs de diagnóstico (Mantidos conforme seu original)
         console.log('Feature CAR válido:', carFeature);
-        console.log('Geometria:', carFeature.geometry);
-        console.log('Tipo de geometria:', carFeature.geometry.type);
-        console.log('Coordenadas:', carFeature.geometry.coordinates);
-
-// Adicionar ao mapa com botão de remover no popup
-// Adicionar ao mapa
+        
+        // Adicionar ao mapa com botão de remover no popup (MANTIDO EXATAMENTE IGUAL)
         const layer = L.geoJSON(carFeature, {
             style: { color: '#ffd700', weight: 1, fillOpacity: 0.5, opacity: 0.3 },
             onEachFeature: (feature, layer) => {
@@ -2087,8 +2283,40 @@ function extractCarCodeFromFilename(filename) {
                 layer.bindPopup(content);
             }
         });
+
+        // Retorno oficial (Mantido conforme seu original)
         return { layer, feature: carFeature, properties: carFeature.properties };
+
+    } catch (err) {
+        console.error('Erro detalhado na consulta:', err);
+        throw new Error("Erro na comunicação com o SICAR. " + err.message);
     }
+}
+
+// Função auxiliar para processar o retorno e criar a camada
+function processCarFeature(carFeature, normalizedCode) {
+    if (!carFeature.geometry || !carFeature.geometry.coordinates) {
+        throw new Error('CAR encontrado, mas sem geometria válida.');
+    }
+
+    const layer = L.geoJSON(carFeature, {
+        style: { color: '#ffd700', weight: 1, fillOpacity: 0.5, opacity: 0.3 },
+        onEachFeature: (feature, layer) => {
+            const content = `
+                <div class="p-2" style="min-width:160px">
+                    <b class="text-blue-800">Imóvel Carregado:</b><br>
+                    <span class="text-[10px] font-mono">${normalizedCode}</span><br><br>
+                    <button onclick="removeSingleCar('${normalizedCode}')" 
+                            style="background-color:#dc2626 !important; color:white !important; padding:5px; width:100%; border-radius:4px; font-size:11px; cursor:pointer; border:none;">
+                        <i class="ph-trash"></i> Remover da Análise
+                    </button>
+                </div>`;
+            layer.bindPopup(content);
+        }
+    });
+
+    return { layer, feature: carFeature, properties: carFeature.properties };
+}
 // Busca Alertas MapBiomas por Bounding Box via GraphQL
  // Realiza o Login Automático no MapBiomas para pegar o Token fresco
     async function loginMapBiomas() {
@@ -2237,25 +2465,16 @@ async function fetchEnvironmentalDataCombined(bbox) {
         await fetchPublicForests(bboxParam);
         await fetchConservationUnits(bboxParam);
         await fetchMapBiomasAlerts(bboxParam);
-        // IBAMA Embargos
-        // Dentro de fetchEnvironmentalDataCombined(bbox)
-// ... (outras buscas)
-
-// Exemplo de como deve estar dentro da fetchEnvironmentalDataCombined
-const ibamaResult = await fetchIbamaEmbargosByBbox(bboxParam);
-
-// Como agora garantimos que ibamaResult é sempre um array:
-if (ibamaResult&& ibamaResult.length > 0) {
-    if (!Array.isArray(window.allIbamaEmbargos)) window.allIbamaEmbargos = [];
-    ibamaResult.forEach(f => {
-        // Evita duplicatas na lista global
-        if (!window.allIbamaEmbargos.some(e => e.properties?.seq_tad === f.properties?.seq_tad)) {
-            window.allIbamaEmbargos.push(f);
+        
+        const ibamaResult = await fetchIbamaEmbargosByBbox(bboxParam);
+        if (ibamaResult && ibamaResult.length > 0) {
+            if (!Array.isArray(window.allIbamaEmbargos)) window.allIbamaEmbargos = [];
+            ibamaResult.forEach(f => {
+                if (!window.allIbamaEmbargos.some(e => e.properties?.seq_tad === f.properties?.seq_tad)) {
+                    window.allIbamaEmbargos.push(f);
+                }
+            });
         }
-    });
-    console.log(`[IBAMA] ${ibamaResult.length} embargos adicionados à lista global.`);
-}
-
 
         if (carCodeFeatures.length > 0 && mmaDataLoaded) {
             for (let i = 0; i < carCodeFeatures.length; i++) {
@@ -2281,11 +2500,12 @@ if (ibamaResult&& ibamaResult.length > 0) {
                     else bioma = null;
                 }
 
-                // FALLBACK WFS PARA PR, RS, SC e MS
                 let networkSuccess = false;
+
+                // --- BLOCO 1: FALLBACK WFS PARA PR, RS, SC e MS (QUANDO BIOMA É NULO) ---
                 if (!bioma) {
                     const uf = (carCode || '').slice(0,2).toUpperCase();
-                    let biomasFallback =[];
+                    let biomasFallback = [];
                     if (uf === 'MS') biomasFallback = ['cerrado', 'mata-atlantica', 'pantanal'];
                     else if (uf === 'PR') biomasFallback = ['mata-atlantica', 'cerrado'];
                     else if (uf === 'SC') biomasFallback = ['mata-atlantica'];
@@ -2293,29 +2513,32 @@ if (ibamaResult&& ibamaResult.length > 0) {
                     
                     if (biomasFallback.length > 0 && !prodesData) {
                         const bboxWfs = getBboxParamFromFeature(feature).replace(',EPSG:4326','');
+                        const bArr = bboxWfs.split(',').map(Number);
+                        
                         let encontrouSobreposicao = false;
                         let totalAreaSobreposicaoFallback = 0;
                         let totalSomaDesmatamentoFallback = 0;
                         let anosFallback = [];
-                        let intersectingFeaturesFallback =[];
-                        let biomasComSobreposicao =[];
+                        let biomasComSobreposicao = [];
                         
-                        for (let b = 0; b < biomasFallback.length; b++) {
-                            const biomaTest = biomasFallback[b];
+                        for (const biomaTest of biomasFallback) {
                             const layerName = getProdesLayerNameFromBioma(biomaTest);
                             if (!layerName) continue;
-                            const cql = `year>=2019 AND year<=2025 AND BBOX(geom,${bboxWfs.split(',').map(Number).join(',')},'EPSG:4326')`;
-                            const wfsUrl = `https://terrabrasilis.dpi.inpe.br/geoserver/${layerName}/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=${layerName}:yearly_deforestation&outputFormat=application/json&srsName=EPSG:4326&CQL_FILTER=${cql}&maxFeatures=500`;
+
+                            // Correção: BBOX dentro do CQL para evitar erro de parâmetros exclusivos
+                            const cqlF = `year>=2019 AND year<=2025 AND BBOX(geom,${bArr[0]},${bArr[1]},${bArr[2]},${bArr[3]})`;
+                            const wfsUrl = `https://terrabrasilis.dpi.inpe.br/geoserver/${layerName}/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=${layerName}:yearly_deforestation&outputFormat=application/json&propertyName=geom,year&CQL_FILTER=${encodeURIComponent(cqlF)}&maxFeatures=500`;
                             
                             try {
-                                const geojson = await fetchJsonWithCorsFallback(wfsUrl);
+                                const response = await fetchJsonWithCorsFallback(wfsUrl);
+                                let data = (response && response.contents) ? JSON.parse(response.contents) : response;
                                 networkSuccess = true;
                                 
-                                if (geojson.features && geojson.features.length > 0) {
+                                if (data && data.features && data.features.length > 0) {
                                     const cleanedFeatureForOverlap = cleanGeometry(feature);
                                     const featuresPorAno = {};
                                     
-                                    geojson.features.forEach(f => {
+                                    data.features.forEach(f => {
                                         try {
                                             const cleanedProdesGeom = cleanGeometry(f);
                                             if (turf.booleanIntersects(cleanedFeatureForOverlap, cleanedProdesGeom)) {
@@ -2323,156 +2546,116 @@ if (ibamaResult&& ibamaResult.length > 0) {
                                                 const inter = turf.intersect(cleanedFeatureForOverlap, cleanedProdesGeom);
                                                 if (inter) {
                                                     inter.properties = { ...f.properties };
-                                                    
-                                                    // NOVO: Cálculo de área exata da intersecção (em hectares)
                                                     const interAreaHa = turf.area(inter) / 10000;
                                                     inter.properties._calculatedAreaHa = interAreaHa;
-
-                                                    // Verifica a regra dos 60 metros (borda)
-                                                    try {
-                                                        let shrunk = turf.buffer(cleanedFeatureForOverlap, -0.06, {units:'kilometers'});
-                                                        if (shrunk && (!shrunk.geometry || shrunk.geometry.coordinates.length === 0)) shrunk = null;
-                                                        if (shrunk) {
-                                                            inter.properties._isEdgeOnly = !turf.booleanIntersects(shrunk, cleanedProdesGeom);
-                                                        } else {
-                                                            inter.properties._isEdgeOnly = true; 
-                                                        }
-                                                    } catch(e) {}
-
-                                                    const areaInter = safeIntersectionArea(feature, f);
-                                                    totalAreaSobreposicaoFallback += areaInter;
-                                                    totalSomaDesmatamentoFallback += areaInter;
-                                                    
                                                     const ano = f.properties.year || f.properties.YEAR;
-                                                    if (ano) anosFallback.push(ano);
-                                                    
-                                                    if (!featuresPorAno[ano]) featuresPorAno[ano] =[];
+                                                    if (!featuresPorAno[ano]) featuresPorAno[ano] = [];
                                                     featuresPorAno[ano].push(inter);
-                                                    
-                                                    intersectingFeaturesFallback.push(inter);
+                                                    totalAreaSobreposicaoFallback += interAreaHa;
+                                                    anosFallback.push(ano);
                                                     if (!biomasComSobreposicao.includes(biomaTest)) biomasComSobreposicao.push(biomaTest);
                                                 }
                                             }
-                                        } catch (error) {}
+                                        } catch (e) {}
                                     });
 
                                     for (const [ano, feats] of Object.entries(featuresPorAno)) {
                                         const color = PRODES_YEAR_COLORS[ano] || '#888888';
                                         const layer = L.geoJSON({ type: 'FeatureCollection', features: feats }, {
                                             style: { color: color, weight: 3, fillOpacity: 0.2 },
-                                            onEachFeature: (feat, layer) => {
-                                                // Exibe a área EXATA calculada em vez da área que vem da API
-                                                const areaStr = feat.properties._calculatedAreaHa !== undefined ? feat.properties._calculatedAreaHa.toFixed(4) : 'N/D';
-                                                const edgeNote = feat.properties._isEdgeOnly ? `<br><b style="color:#d97706; font-size:11px;">Aviso: Sobreposição de borda < 60m (NT Inpe)</b>` : '';
-                                                layer.bindPopup(`<b>PRODES (fallback) ${biomaTest}</b><br>Ano: ${feat.properties.year || ano}<br>Área sobreposta: ${areaStr} ha${edgeNote}`);
+                                            onEachFeature: (feat, l) => {
+                                                const areaStr = feat.properties._calculatedAreaHa ? feat.properties._calculatedAreaHa.toFixed(4) : 'N/D';
+                                                l.bindPopup(`<b>PRODES (fallback) ${biomaTest}</b><br>Ano: ${ano}<br>Área sobreposta: ${areaStr} ha`);
                                             }
                                         });
                                         prodesLayers.push(layer);
-                                        layer.addTo(map);
-                                        
                                         if (!window._prodesYearLayers) window._prodesYearLayers = {};
                                         window._prodesYearLayers[ano] = window._prodesYearLayers[ano] || [];
                                         window._prodesYearLayers[ano].push(layer);
+                                        layer.addTo(map);
                                     }
                                 }
-                            } catch (err) {
-                                console.warn('[PRODES][FALLBACK] Erro rede:', err);
-   			        window.prodesQueryError = true; 
-                            }
+                            } catch (err) { console.warn(`Erro no fallback ${biomaTest}`); }
                         }
-                        if (!feature.properties) feature.properties = {};
                         feature.properties.hasSuppressionFallback = encontrouSobreposicao;
-                        feature.properties.intersectingProdesFallback = intersectingFeaturesFallback;
-                        feature.properties.anosFallback = Array.from(new Set(anosFallback));
                         feature.properties.areaSobreposicaoFallback = totalAreaSobreposicaoFallback;
-                        feature.properties.somaDesmatamentoFallback = totalSomaDesmatamentoFallback;
-                        feature.properties.biomaFallback = biomasComSobreposicao.length > 0 ? biomasComSobreposicao.join(', ') : biomasFallback.join(', ');
-                        feature.properties.fallbackConsultaOk = !encontrouSobreposicao;
+                        feature.properties.anosFallback = Array.from(new Set(anosFallback));
+                        feature.properties.biomaFallback = biomasComSobreposicao.join(', ');
                     }
                 }
-                
-                if (!feature.properties) feature.properties = {};
-                feature.properties.fallbackNetworkSuccess = networkSuccess;
 
-                // CONSULTA PADRÃO WFS MMA
-                const layerName = getProdesLayerNameFromBioma(bioma);
-                if (!layerName) continue;
-                
-                const bboxWfs = getBboxParamFromFeature(feature).replace(',EPSG:4326','');
-                const bboxArr = bboxWfs.split(',').map(Number);
-                const cql = `year>=2019 AND year<=2025 AND BBOX(geom,${bboxArr[0]},${bboxArr[1]},${bboxArr[2]},${bboxArr[3]},'EPSG:4326')`;
-                const wfsUrl = `https://terrabrasilis.dpi.inpe.br/geoserver/${layerName}/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=${layerName}:yearly_deforestation&outputFormat=application/json&srsName=EPSG:4326&CQL_FILTER=${cql}&maxFeatures=500`;
-                
-                try {
-                    const geojson = await fetchJsonWithCorsFallback(wfsUrl);
-                    if (geojson.features && geojson.features.length > 0) {
-                        const featuresPorAno = {};
-                        geojson.features.forEach(f => {
-                            const ano = f.properties.year || f.properties.YEAR;
-                            if (!featuresPorAno[ano]) featuresPorAno[ano] = [];
-                            featuresPorAno[ano].push(f);
-                        });
+                // --- BLOCO 2: CONSULTA PADRÃO MMA (BIOMA VINDO DO JSON) ---
+                const layerNameMain = getProdesLayerNameFromBioma(bioma);
+                if (layerNameMain) {
+                    const bboxWfs = getBboxParamFromFeature(feature).replace(',EPSG:4326','');
+                    const bArr = bboxWfs.split(',').map(Number);
+                    
+                    const cqlMain = `year>=2019 AND year<=2025 AND BBOX(geom,${bArr[0]},${bArr[1]},${bArr[2]},${bArr[3]})`;
+                    const wfsUrlMain = `https://terrabrasilis.dpi.inpe.br/geoserver/${layerNameMain}/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=${layerNameMain}:yearly_deforestation&outputFormat=application/json&propertyName=geom,year&CQL_FILTER=${encodeURIComponent(cqlMain)}&maxFeatures=500`;
+                    
+                    try {
+                        const responseMain = await fetchJsonWithCorsFallback(wfsUrlMain);
+                        let dataMain = (responseMain && responseMain.contents) ? JSON.parse(responseMain.contents) : responseMain;
+                        networkSuccess = true;
 
-                        for (const [ano, feats] of Object.entries(featuresPorAno)) {
-                            const color = PRODES_YEAR_COLORS[ano] || '#888888';
-                            let intersected =[];
-                            feats.forEach(f => {
-                                if (carCodeFeatures && carCodeFeatures.length > 0) {
+                        if (dataMain && dataMain.features && dataMain.features.length > 0) {
+                            const featuresPorAno = {};
+                            dataMain.features.forEach(f => {
+                                const ano = f.properties.year || f.properties.YEAR;
+                                if (!featuresPorAno[ano]) featuresPorAno[ano] = [];
+                                featuresPorAno[ano].push(f);
+                            });
+
+                            for (const [ano, feats] of Object.entries(featuresPorAno)) {
+                                const color = PRODES_YEAR_COLORS[ano] || '#888888';
+                                let intersected = [];
+                                feats.forEach(f => {
                                     for (const car of carCodeFeatures) {
                                         try {
                                             if (turf.booleanIntersects(f, car)) {
                                                 const inter = turf.intersect(f, car);
                                                 if (inter) {
                                                     inter.properties = { ...f.properties };
-                                                    
-                                                    // NOVO: Cálculo de área exata da intersecção (em hectares)
                                                     const interAreaHa = turf.area(inter) / 10000;
                                                     inter.properties._calculatedAreaHa = interAreaHa;
-
-                                                    // Verifica a regra dos 60 metros (borda)
                                                     try {
                                                         let shrunk = turf.buffer(car, -0.06, {units:'kilometers'});
-                                                        if (shrunk && (!shrunk.geometry || shrunk.geometry.coordinates.length === 0)) shrunk = null;
-                                                        if (shrunk) {
-                                                            inter.properties._isEdgeOnly = !turf.booleanIntersects(shrunk, f);
-                                                        } else {
-                                                            inter.properties._isEdgeOnly = true;
-                                                        }
-                                                    } catch(e) {}
-                                              
+                                                        inter.properties._isEdgeOnly = shrunk ? !turf.booleanIntersects(shrunk, f) : true;
+                                                    } catch(e) { inter.properties._isEdgeOnly = false; }
                                                     intersected.push(inter);
                                                 }
                                                 break;
                                             }
                                         } catch (e) {}
                                     }
-                                }
-                            });
-                            
-                            if (intersected.length > 0) {
-                                const layer = L.geoJSON({ type: 'FeatureCollection', features: intersected }, {
-                                    style: { color: color, weight: 3, fillOpacity: 0.2 },
-                                    onEachFeature: (feat, layer) => {
-                                        // Exibe a área EXATA calculada em vez da área que vem da API
-                                        const areaStr = feat.properties._calculatedAreaHa !== undefined ? feat.properties._calculatedAreaHa.toFixed(4) : 'N/D';
-                                        const edgeNote = feat.properties._isEdgeOnly ? `<br><b style="color:#d97706; font-size:11px;">Aviso: Sobreposição de borda < 60m (NT Inpe)</b>` : '';
-                                        layer.bindPopup(`<b>PRODES ${bioma} - ${ano}</b><br>Ano: ${feat.properties.year || ano}<br>Área sobreposta: ${areaStr} ha${edgeNote}`);
-                                    }
                                 });
-                                prodesLayers.push(layer);
-                                if (!window._prodesYearLayers) window._prodesYearLayers = {};
-                                window._prodesYearLayers[ano] = window._prodesYearLayers[ano] || [];
-                                window._prodesYearLayers[ano].push(layer);
-                                layer.addTo(map);
+                                
+                                if (intersected.length > 0) {
+                                    const layer = L.geoJSON({ type: 'FeatureCollection', features: intersected }, {
+                                        style: { color: color, weight: 3, fillOpacity: 0.2 },
+                                        onEachFeature: (feat, l) => {
+                                            const areaStr = feat.properties._calculatedAreaHa ? feat.properties._calculatedAreaHa.toFixed(4) : 'N/D';
+                                            const edgeNote = feat.properties._isEdgeOnly ? `<br><b style="color:#d97706; font-size:11px;">Aviso: Sobreposição de borda < 60m</b>` : '';
+                                            l.bindPopup(`<b>PRODES ${bioma}</b><br>Ano: ${ano}<br>Área sobreposta: ${areaStr} ha${edgeNote}`);
+                                        }
+                                    });
+                                    prodesLayers.push(layer);
+                                    if (!window._prodesYearLayers) window._prodesYearLayers = {};
+                                    window._prodesYearLayers[ano] = window._prodesYearLayers[ano] || [];
+                                    window._prodesYearLayers[ano].push(layer);
+                                    layer.addTo(map);
+                                }
                             }
                         }
-                    }
-                } catch (err) {}
+                    } catch (err) { console.error('[PRODES] Erro no Bloco 2:', bioma); }
+                }
+                
+                if (!feature.properties) feature.properties = {};
+                feature.properties.fallbackNetworkSuccess = networkSuccess;
             }
         }
 
         await calculateEnvironmentalMetricsCombined();
-        // openRelatorioModal(); comentei pra deixa tuo no painel do lado, e o modal é aberto após selecionar o botao
         addLayerControl();
         updateLegend();
 
@@ -2556,51 +2739,74 @@ if (ibamaResult&& ibamaResult.length > 0) {
   
 
     // Buscar PRODES
-    async function fetchPRODES(bbox) {
-        // Limpar camadas anteriores
-        prodesLayers.forEach(layer => map.removeLayer(layer));
-        prodesLayers = [];
+ async function fetchPRODES(bbox) {
+    // Limpar camadas anteriores
+    prodesLayers.forEach(layer => map.removeLayer(layer));
+    prodesLayers = [];
 
-        const biomes = ['cerrado', 'pantanal', 'mata-atlantica', 'amazonia', 'pampa', 'caatinga'];
-        const biomeLayers = {
-            'cerrado': 'prodes-cerrado-nb',
-            'pantanal': 'prodes-pantanal-nb',
-            'mata-atlantica': 'prodes-mata-atlantica-nb',
-            'amazonia': 'prodes-amazon-nb',
-            'pampa': 'prodes-pampa-nb',
-            'caatinga': 'prodes-caatinga-nb'
-        };
+    const biomes = ['cerrado', 'pantanal', 'mata-atlantica', 'amazonia', 'pampa', 'caatinga'];
+    const biomeLayers = {
+        'cerrado': 'prodes-cerrado-nb',
+        'pantanal': 'prodes-pantanal-nb',
+        'mata-atlantica': 'prodes-mata-atlantica-nb',
+        'amazonia': 'prodes-amazon-nb',
+        'pampa': 'prodes-pampa-nb',
+        'caatinga': 'prodes-caatinga-nb'
+    };
 
-        for (const biome of biomes) {
-            try {
-                const layerName = biomeLayers[biome];
-                const bboxCoords = bbox.replace(',EPSG:4326', '');
-                const wfsUrl = `https://terrabrasilis.dpi.inpe.br/geoserver/${layerName}/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=${layerName}:yearly_deforestation&outputFormat=application/json&bbox=${bboxCoords}&srsName=EPSG:4326&CQL_FILTER=year>=2019 AND year<=2025`;
+    for (const biome of biomes) {
+        try {
+            const layerName = biomeLayers[biome];
+            // Limpa a string de coordenadas para o padrão Lon,Lat
+            const bboxCoords = bbox.replace(',EPSG:4326', '');
+            
+            // Monta o filtro espacial e temporal
+            const cql = `year>=2019 AND year<=2025 AND BBOX(geom,${bboxCoords})`;
 
-                console.log(`Buscando PRODES ${biome}:`, wfsUrl);
+            // URL CORRIGIDA: 
+            // 1. Versão 1.0.0 (Mais estável contra erros de esquema)
+            // 2. propertyName=geom,year (Ignora a coluna defeituosa 'uid' e a 'area_ha' que varia de nome)
+            const wfsUrl = `https://terrabrasilis.dpi.inpe.br/geoserver/${layerName}/ows?` +
+                           `service=WFS&version=1.0.0&request=GetFeature&` +
+                           `typeName=${layerName}:yearly_deforestation&` +
+                           `outputFormat=application/json&` +
+                           `propertyName=geom,year&` + 
+                           `CQL_FILTER=${encodeURIComponent(cql)}`;
 
-                const geojson = await fetchJsonWithCorsFallback(wfsUrl);
-                console.log(`GeoJSON PRODES ${biome}:`, geojson);
+            console.log(`Buscando PRODES ${biome} (Universal):`, wfsUrl);
 
-                if (geojson.features && geojson.features.length > 0) {
-                    const layer = L.geoJSON(geojson, {
-                        style: { color: '#ff0000', weight: 1, fillOpacity: 0.8 },
-                        onEachFeature: (feature, layer) => {
-                            layer.bindPopup(`<b>PRODES ${biome.toUpperCase()}</b><br>Ano: ${feature.properties.year}<br>Área: ${feature.properties.area_ha} ha`);
-                        }
-                    });
-                    prodesLayers.push(layer);
-                    layer.addTo(map);
-                    console.log(`Adicionado ${geojson.features.length} features PRODES ${biome}`);
-                } else {
-                    console.log(`Nenhum feature encontrado para PRODES ${biome}`);
-                }
-            } catch (error) {
-                console.warn(`Erro ao buscar PRODES ${biome}:`, error);
+            const responseRaw = await fetchJsonWithCorsFallback(wfsUrl);
+            
+            // TRATAMENTO ALLORIGINS: Extrai o JSON de dentro da string 'contents'
+            let geojson;
+            if (responseRaw && responseRaw.contents) {
+                try {
+                    geojson = JSON.parse(responseRaw.contents);
+                } catch(e) { geojson = null; }
+            } else {
+                geojson = responseRaw;
             }
+
+            if (geojson && geojson.features && geojson.features.length > 0) {
+                const layer = L.geoJSON(geojson, {
+                    style: { color: '#ff0000', weight: 1, fillOpacity: 0.8 },
+                    onEachFeature: (feature, layer) => {
+                        // Cálculo matemático da área via Turf.js (Independente do nome da coluna do servidor)
+                        const areaCalculada = (turf.area(feature) / 10000).toFixed(2);
+                        const ano = feature.properties.year || feature.properties.YEAR || 'N/D';
+                        
+                        layer.bindPopup(`<b>PRODES ${biome.toUpperCase()}</b><br>Ano: ${ano}<br>Área: ${areaCalculada} ha`);
+                    }
+                });
+                prodesLayers.push(layer);
+                layer.addTo(map);
+                console.log(`Adicionado ${geojson.features.length} features PRODES ${biome}`);
+            }
+        } catch (error) {
+            console.warn(`Erro ao buscar PRODES ${biome}:`, error);
         }
     }
-
+}
     // Buscar Florestas Públicas
     async function fetchPublicForests(bbox) {
         // Limpar camadas anteriores
@@ -2858,34 +3064,36 @@ function toggleSidebar() {
     panel.classList.toggle('collapsed');
     
     if (panel.classList.contains('collapsed')) {
-        icon.className = 'ph-caret-double-left-fill'; // Muda para "Abrir"
+        icon.className = 'ph ph-caret-left'; // Muda para "Abrir"
         wrapper.classList.remove('has-sidebar');
     } else {
-        icon.className = 'ph-caret-double-right-fill'; // Muda para "Fechar"
+        icon.className = 'ph ph-caret-right'; // Muda para "Fechar"
         wrapper.classList.add('has-sidebar');
     }
     setTimeout(() => { if (map) map.invalidateSize(); }, 300);
 }
 
+// ATUALIZA O PAINEL DE RESUMO (TEMA CLARO) E ABRE O MENU LATERAL AUTOMATICAMENTE
 function updateSidePanel() {
     const container = document.getElementById('side-panel-content');
-    const sidePanel = document.getElementById('side-panel');
-    const wrapper = document.querySelector('.gv-dashboard-wrapper');
+    // Novos seletores baseados no menu lateral expansível
+    const summaryWrapper = document.getElementById('sidebar-summary-container');
+    const sidebar = document.getElementById('main-sidebar');
     
-    if (!container || !sidePanel || !wrapper) return;
+    if (!container || !summaryWrapper || !sidebar) return;
 
     const temCar = carCodes && carCodes.length > 0;
     const metrics = window.environmentalMetrics;
 
     if (!temCar) {
-        sidePanel.style.display = 'none';
-        wrapper.classList.remove('has-sidebar');
+        // Se não houver CAR, oculta o bloco de resumo do menu lateral
+        summaryWrapper.classList.add('hidden');
+        summaryWrapper.classList.remove('flex');
         return;
     } else {
-        sidePanel.style.display = 'flex';
-        if (!sidePanel.classList.contains('collapsed')) {
-            wrapper.classList.add('has-sidebar');
-        }
+        // Mostra o bloco de resumo
+        summaryWrapper.classList.remove('hidden');
+        summaryWrapper.classList.add('flex');
     }
 
     let dynamicCards = '';
@@ -2893,29 +3101,37 @@ function updateSidePanel() {
     carCodes.forEach((code, index) => {
         const prop = carProperties[index] || {};
         const statusSicar = (prop.status_imovel || "Ativo").toUpperCase();
-        const isSuspenso = statusSicar.includes("SUSPENSO") || statusSicar.includes("SU");
+        
+        // REGRA DE SUSPENSO: Verifica se contém SU ou SUSPENSO
+        const isSuspenso = statusSicar.includes("SUSPENSO") || statusSicar === "SU";
+        const classeStatus = isSuspenso ? 'status-su text-red-600' : 'status-at text-green-600';
         const carMetric = metrics?.carMetrics?.find(m => normalizeCarCode(m.code) === normalizeCarCode(code));
+        const areaImovel = parseFloat(prop.area_imovel || prop.area_ha || (carMetric ? carMetric.area : 0)).toFixed(2);
 
         dynamicCards += `
         <div class="side-card-car bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm mb-4">
             <div class="side-card-header bg-slate-50 p-3 border-b border-slate-200">
-                <p class="text-[9px] font-bold text-slate-400 uppercase mb-1">Imóvel Analisado ${index + 1}</p>
-                <b class="font-mono">${code}</b>
+                <p class="text-[9px] font-bold text-slate-400 uppercase mb-1 text-left">Imóvel Analisado ${index + 1}</p>
+                <b class="font-mono text-slate-800 block text-left">${code}</b>
             </div>
             <div class="p-4">
-                <div class="side-data-row">
-                    <span>Status SICAR:</span>
-                    <b class="${isSuspenso ? 'text-red-600' : 'text-green-600'}">${statusSicar}</b>
+                <div class="side-data-row" style='display: flex; gap: 6px; justify-content: flex-start; font-size: 13px; margin-bottom: 4px;'>
+                    <span class="text-slate-500">Status SICAR:</span>
+                    <b class="${classeStatus}">${statusSicar}</b>
                 </div>
-                <div class="side-data-row">
-                    <span>Módulos Fiscais:</span>
+                <div class="side-data-row" style="justify-content: flex-start;">
+                    <span class="text-slate-500 mr-1">Módulos Fiscais: </span>
                     <b class="text-slate-700">${parseFloat(prop.modulos_fiscais || prop.m_fiscal || 0).toFixed(2)} MF</b>
                 </div>
-                <div class="bg-slate-100 p-2 rounded text-center font-bold text-slate-600 text-[11px] uppercase mt-2">
+                <div class="side-data-row" style="justify-content: flex-start;">
+                    <span class="text-slate-500 mr-1">Área do Imóvel: </span>
+                    <b class="text-slate-700">${areaImovel} ha</b>
+                </div>
+                <div class="bg-slate-100 p-2 rounded text-center font-bold text-slate-600 text-[10px] uppercase mt-3">
                     ${prop.municipio || 'N/D'} - ${prop.uf || ''}
                 </div>
                 
-                <div class="mt-5">
+                <div class="mt-5 text-left">
                     <p class="text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest border-b pb-1">Checklist de Riscos</p>
                     ${generateComprehensiveAlerts(carMetric)}
                 </div>
@@ -2926,30 +3142,41 @@ function updateSidePanel() {
     // LISTAGEM DE GLEBAS
     let glebasHtml = '';
     if (glebaData.length > 0) {
-        glebasHtml = `<div class="mt-2 pt-4 border-t border-slate-100">
-            <p class="font-bold text-slate-400 uppercase text-[9px] mb-3 px-1">Glebas no Mapa</p>`;
+        glebasHtml = `<div class="mt-2 pt-4 border-t border-slate-600/50">
+            <p class="font-bold text-slate-400 uppercase text-[9px] mb-3 px-1 text-left">Glebas no Mapa</p>`;
         glebaData.sort((a,b)=>a.glebaIndex-b.glebaIndex).forEach(g => {
             const area = g.layer ? calculateGlebaArea(g.layer) : '0.00';
             glebasHtml += `
-                <div class="flex items-center gap-2 p-2 bg-slate-50 rounded-lg text-[13px] mb-1 border border-slate-100">
-                    <span class="w-3 h-3 rounded-full" style="background:${getGlebaColor(g.glebaIndex)}"></span>
+                <div class="flex items-center gap-2 p-2 bg-slate-50 rounded-lg text-[12px] mb-1 border border-slate-100">
+                    <span class="w-2.5 h-2.5 rounded-full" style="background:${getGlebaColor(g.glebaIndex)}"></span>
                     <span class="font-bold text-slate-600">Gleba ${g.glebaIndex}</span>
-                    <span class="ml-auto font-mono text-blue-800 font-black text-[15px]">${area} ha</span>
+                    <span class="ml-auto font-mono text-blue-800 font-bold">${area} ha</span>
                 </div>`;
         });
         glebasHtml += `</div>`;
     }
 
-    // MONTAGEM FINAL: Área rolável + Botão Verde Fixo no final
+    // BOTÃO FINAL AJUSTADO: Igual aos botões da barra superior
     container.innerHTML = `
         <div id="side-panel-scroll-area" class="custom-scrollbar" style="flex: 1; overflow-y: auto; padding-right: 5px;">
             ${dynamicCards}
             ${glebasHtml}
         </div>
-        <button onclick="openRelatorioModal()" class="w-full bg-green-700 hover:bg-green-800 text-white text-[11px] font-black py-4 rounded-lg transition-all shadow-md mt-4 flex-shrink-0">
-            VER RELATÓRIO COMPLETO
+        <button onclick="openRelatorioModal()" 
+                class="w-full bg-green-700 hover:bg-green-800 text-white rounded-lg transition-all shadow-md mt-4 flex-shrink-0"
+                style="height: 50px !important; font-size: 12px !important; font-weight: 700 !important; display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <i class="ph-file-text-fill" style="font-size: 18px;"></i> VER RELATÓRIO COMPLETO
         </button>
     `;
+
+    // MÁGICA: ABRE O MENU LATERAL AUTOMATICAMENTE SE ESTIVER FECHADO
+    if (sidebar.classList.contains('-ml-72')) {
+        toggleMainMenu(); 
+    }
+        // Usamos setTimeout para esperar o menu terminar de deslizar (300ms) antes de rolar
+    setTimeout(() => {
+        summaryWrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 350);
 }
 function generateComprehensiveAlerts(m) {
     if (!m) return `<p class="text-xs text-slate-400 italic"><i class="ph-spinner ph-spin"></i> Analisando bases...</p>`;
@@ -2970,7 +3197,7 @@ function generateComprehensiveAlerts(m) {
     // UNIDADE DE CONSERVAÇÃO
     if (m.intersectingUCs?.length > 0) {
         alerts.push(`<div class="side-alert-box bg-blue-50 text-blue-800 border-l-4 border-blue-500">
-            <i class="ph-tree-structure-fill"></i> <span>Sobreposição UC</span>
+            <i class="ph-tree-structure-fill"></i> <span>Unidade de Conservação</span>
         </div>`);
     }
     // FLORESTA PÚBLICA
@@ -2988,7 +3215,7 @@ function generateComprehensiveAlerts(m) {
     // MAPBIOMAS
     if (m.mapBiomasAlerts?.length > 0) {
         alerts.push(`<div class="side-alert-box bg-orange-50 text-orange-800 border-l-4 border-orange-500">
-            <i class="ph-fire-fill"></i> <span>MapBiomas Recente</span>
+            <i class="ph-fire-fill"></i> <span>Alertas MapBiomas</span>
         </div>`);
     }
 
@@ -3059,6 +3286,7 @@ function generateCarAlertsHtml(carMetric) {
     return alerts.join('');
 }
  // Calcular métricas ambientais para todos os CARs (usa dados PRODES por CAR/bioma)
+// Calcular métricas ambientais para todos os CARs (usa dados PRODES por CAR/bioma)
 async function calculateEnvironmentalMetricsCombined() {
     if (carCodeFeatures.length === 0) return Promise.resolve();
 
@@ -3069,6 +3297,7 @@ async function calculateEnvironmentalMetricsCombined() {
         return new Promise(resolve => {
             const carCode = carCodes[index];
             const normalizedCode = normalizeCarCode(carCode);
+            const uf = (carCode || '').slice(0, 2).toUpperCase();
             const carArea = turf.area(feature) / 10000;
             totalCarArea += carArea;
 
@@ -3077,6 +3306,13 @@ async function calculateEnvironmentalMetricsCombined() {
             let anosDetectados = new Set();
 
             let prodesData = mmaData[normalizedCode] || mmaData[Object.keys(mmaData).find(k => k.startsWith(normalizedCode))];
+
+            // Flag correta se PRODES foi consultado com sucesso para ESTE CAR
+            const isProdesOk = !!prodesData || !!feature.properties?.fallbackNetworkSuccess;
+            
+            // Florestas públicas suporta apenas RS, PR, SC, MS
+            const fpSupported = ['RS','PR','SC','MS'].includes(uf);
+            const fpQueryError = !fpSupported || window.publicForestsQueryError;
 
             const cleanedFeature = cleanGeometry(feature);
             
@@ -3101,15 +3337,19 @@ async function calculateEnvironmentalMetricsCombined() {
                 code: carCode,
                 area: carArea,
                 deforestationArea: finalDeforestationSum,
+                
+                // Flags consolidadas de status de consulta (usadas pela UI)
+                prodesConsultaOk: isProdesOk,
+                ucQueryError: window.ucQueryError || false,
+                publicForestsQueryError: fpQueryError,
+                mapBiomasQueryError: window.mapBiomasQueryError || false,
+                ibamaQueryError: window.ibamaQueryError || false,
+    
                 areaPorAno: areaPorAno,
                 anos: Array.from(anosDetectados).sort(),
                 prodesData: prodesData,
                 julgStatus: prodesData?.julg_status || 'N/D',
                 hasUC: false, 
-                ucQueryError: window.ucQueryError || false,
-                publicForestsQueryError: window.publicForestsQueryError || false,
-                mapBiomasQueryError: window.mapBiomasQueryError || false,
-                ibamaQueryError: window.ibamaQueryError || false,
                 intersectingUCs: [],
                 intersectingPublicForests: [],
                 mapBiomasAlerts: [],
@@ -3120,7 +3360,6 @@ async function calculateEnvironmentalMetricsCombined() {
             });
         });
     });
-
 
     const results = await Promise.all(carPromises);
     
@@ -3170,7 +3409,7 @@ async function calculateEnvironmentalMetricsCombined() {
 
         // --- VÍNCULO MAPBIOMAS ---
         m.mapBiomasAlerts = []; 
-        if (!window.mapBiomasQueryError && window.allMapBiomasAlerts && window.allMapBiomasAlerts.length > 0) {
+        if (!m.mapBiomasQueryError && window.allMapBiomasAlerts && window.allMapBiomasAlerts.length > 0) {
             window.allMapBiomasAlerts.forEach(alerta => {
                 try {
                     if (turf.booleanIntersects(cleaned, alerta)) {
@@ -3211,48 +3450,41 @@ async function calculateEnvironmentalMetricsCombined() {
         carMetrics: results
     };
 }
-
- // Helper para converter imagem em DataURL (usado no cabeçalho do PDF)
-    async function loadImageAsDataUrl(url) {
-        return new Promise((resolve, reject) => {
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                canvas.width = img.width;
-                canvas.height = img.height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0);
-                resolve(canvas.toDataURL('image/png'));
-            };
-            img.onerror = err => reject(err);
-            img.src = url;
-        });
-    }
 async function captureMapImage() {
     const mapElement = document.getElementById('map');
     
-    // 1. Usa a variável global 'map' (do Leaflet) em vez de 'window.map' (da DIV)
-    if (typeof map !== 'undefined' && map !== null && typeof map.invalidateSize === 'function') {
-        map.invalidateSize();
-    }
+    // 1. Garante que o mapa entenda seu tamanho atual com a legenda aberta
+    map.invalidateSize();
 
-    // 2. Tempo de espera maior para garantir renderização de todas as camadas
-    await new Promise(resolve => setTimeout(resolve, 1800));
+    // 2. Espera o navegador processar o novo layout da legenda
+    await new Promise(resolve => setTimeout(resolve, 1500)); 
 
     try {
         const canvas = await html2canvas(mapElement, {
             useCORS: true,
             allowTaint: false,
+            scale: 2,
             logging: false,
-            scale: 2, // Melhora a resolução
-            backgroundColor: null,
-            // Garante que ignore elementos que possam travar o print
-            ignoreElements: (el) => el.classList.contains('leaflet-control-zoom')
+            // A mágica para parar o deslocamento do CAR:
+            onclone: (clonedDoc) => {
+                const mapPane = clonedDoc.querySelector('.leaflet-map-pane');
+                const objectsPane = clonedDoc.querySelector('.leaflet-objects-pane');
+                
+                if (mapPane) {
+                    // Remove o deslocamento do container principal do Leaflet
+                    mapPane.style.transform = 'none';
+                    mapPane.style.left = '0px';
+                    mapPane.style.top = '0px';
+                }
+                
+                // Esconde botões de zoom e outros controles que não devem sair no PDF
+                const controls = clonedDoc.querySelectorAll('.leaflet-control-zoom, .leaflet-control-layers');
+                controls.forEach(c => c.style.display = 'none');
+            }
         });
         return canvas.toDataURL('image/png');
     } catch (err) {
-        console.error("Erro na captura do mapa:", err);
+        console.error("Erro na captura:", err);
         return null;
     }
 }
@@ -4002,296 +4234,401 @@ function getProdesDeadlineMessage(modFisc) {
         faixa = "até 4 módulos fiscais";
     }
 
-    return `<br><span class="text-red-700 font-bold italic">Imóvel com ${modFisc.toFixed(2)} MF (${faixa}): a análise de conformidade Prodes será obrigatória a partir de ${data}.</span>`;
+    return `<br><span class="text-red-700 font-bold italic">Atenção: Imóvel com ${modFisc.toFixed(2)} MF (${faixa}): a análise de conformidade Prodes será obrigatória a partir de ${data}.</span>`;
 }
-    function populateEnvironmentalTab() {
-        const container = document.getElementById('environmental-content-unified');
-        // NOVO: Verifica se há CARs carregados antes de mostrar métricas
-        if (carCodes.length === 0) {
-            container.innerHTML = `
-                <div class="p-8 text-center">
-                    <div class="inline-flex items-center justify-center w-16 h-16 bg-amber-100 text-amber-600 rounded-full mb-4">
-                        <i class="ph-warning-octagon" style="font-size: 32px;"></i>
-                    </div>
-                    <h4 class="text-lg font-bold text-gray-800 mb-2">Nenhum CAR carregado para análise</h4>
-                    <p class="text-gray-600 max-w-md mx-auto mb-6">
-                        Para gerar o relatório ambiental, você precisa informar um código de CAR, fazer upload de um arquivo ou clicar em <strong>"Sim, analisar"</strong> no(s) CAR(s) detectado(s) automaticamente no mapa.
-                    </p>
-                    <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-blue-800 text-left inline-block">
-                        <strong>Dica:</strong> Se você já carregou as glebas, verifique se existem contornos <span class="text-amber-600 font-bold">pontilhados em amarelo</span> no mapa e clique neles para iniciar a validação automática.
-                    </div>
-                </div>`;
-            return;
-        }
+function populateEnvironmentalTab() {
+    const container = document.getElementById('environmental-content-unified');
+    
+    if (carCodes.length === 0) {
+        container.innerHTML = `
+            <div class="p-8 text-center bg-slate-50 border border-slate-200 rounded-xl">
+                <div class="inline-flex items-center justify-center w-16 h-16 bg-white text-slate-400 border border-slate-200 rounded-full mb-4 shadow-sm">
+                    <i class="ph-bold ph-map-trifold" style="font-size: 32px;"></i>
+                </div>
+                <h4 class="text-lg font-bold text-slate-800 mb-2">Nenhum imóvel carregado para análise</h4>
+                <p class="text-slate-500 max-w-md mx-auto mb-6 text-sm">
+                    Para gerar o relatório ambiental detalhado, é necessário processar um código CAR, arquivo ou validar as áreas no mapa.
+                </p>
+            </div>`;
+        return;
+    }
 
-        const metrics = window.environmentalMetrics;
-        if (!metrics) {
-            container.innerHTML = '<div class="p-8 text-center text-gray-500"><i class="ph-spinner ph-spin text-3xl mb-2"></i><p>Concluindo processamento dos dados ambientais...</p></div>';
-            return;
-        }
+    const metrics = window.environmentalMetrics;
+    if (!metrics) {
+        container.innerHTML = '<div class="p-8 text-center text-slate-500"><i class="ph-spinner ph-spin text-3xl mb-2"></i><p>Concluindo processamento dos metadados...</p></div>';
+        return;
+    }
 
-        const dateTime = new Date().toLocaleString('pt-BR');
-        const hasUnconsulted = metrics.carMetrics.some(car => !car.prodesConsultaOk && !car.properties?.fallbackNetworkSuccess);
-        const isGloballyConsulted = !hasUnconsulted;
+    const dateTime = new Date().toLocaleString('pt-BR');
+    const hasUnconsulted = metrics.carMetrics.some(car => !car.prodesConsultaOk && !car.properties?.fallbackNetworkSuccess);
+    const isGloballyConsulted = !hasUnconsulted;
 
-        let html = `<div class="space-y-6">
-            <div class="flex items-center justify-between border-b pb-4">
-                <div class="text-sm text-gray-500">Relatório gerado em: <span class="font-semibold">${dateTime}</span></div>
+    // Cabeçalho e Cards Superiores (Estilo Clean)
+    let html = `<div class="space-y-6">
+        <div class="flex items-center justify-between border-b border-slate-200 pb-3">
+            <div class="text-xs text-slate-500 font-medium">Relatório gerado em: <span class="font-bold text-slate-700">${dateTime}</span></div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+                <div class="text-blue-600 text-[10px] font-bold uppercase tracking-widest mb-1">Área Total Analisada</div>
+                <div class="text-2xl font-black text-blue-900">${metrics.totalCarArea.toFixed(2)} <span class="text-sm font-semibold text-blue-700">ha</span></div>
             </div>
-
-            <!-- Cards de Resumo -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div class="bg-blue-50 p-4 rounded-lg border border-blue-100">
-                    <div class="text-blue-600 text-xs font-bold uppercase tracking-wider">Área Total CAR(s)</div>
-                    <div class="text-2xl font-black text-blue-900">${metrics.totalCarArea.toFixed(2)} <span class="text-sm font-normal">ha</span></div>
-                </div>
-                <div class="${metrics.totalDeforestationArea > 0 ? 'bg-red-50 border-red-100' : (isGloballyConsulted ? 'bg-green-50 border-green-100' : 'bg-gray-100 border-gray-300')} p-4 rounded-lg border">
-                    <div class="${metrics.totalDeforestationArea > 0 ? 'text-red-600' : (isGloballyConsulted ? 'text-green-600' : 'text-gray-600')} text-xs font-bold uppercase tracking-wider">Supressão PRODES (19-25)</div>
-                    <div class="text-2xl font-black ${metrics.totalDeforestationArea > 0 ? 'text-red-900' : (isGloballyConsulted ? 'text-green-900' : 'text-slate-800')}">${metrics.totalDeforestationArea.toFixed(2)} <span class="text-sm font-normal">ha</span></div>
-                </div>
-                <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                    <div class="text-gray-600 text-xs font-bold uppercase tracking-wider">Comprometimento Médio</div>
-                    <div class="text-2xl font-black text-gray-900">${metrics.totalDeforestationPercent.toFixed(2)}%</div>
-                </div>
+            <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <div class="text-slate-600 text-[10px] font-bold uppercase tracking-widest mb-1">Supressão PRODES (19-25)</div>
+                <div class="text-2xl font-black text-slate-800">${metrics.totalDeforestationArea.toFixed(2)} <span class="text-sm font-semibold text-slate-500">ha</span></div>
             </div>
+            <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <div class="text-slate-600 text-[10px] font-bold uppercase tracking-widest mb-1">Comprometimento Médio</div>
+                <div class="text-2xl font-black text-slate-800">${metrics.totalDeforestationPercent.toFixed(2)}%</div>
+            </div>
+        </div>
 
-            ${(() => {
-                const hasCritical = metrics.carMetrics.some(car => {
+        ${(() => {
+            const hasCritical = metrics.carMetrics.some(car => {
                 return ['SU', 'SUSPENSO'].includes((car.properties?.status_imovel || '').toUpperCase()) || 
                     car.hasUC || car.deforestationArea > 0 ||
-                        (car.intersectingPublicForests && car.intersectingPublicForests.length > 0) ||
-                        (car.mapBiomasAlerts && car.mapBiomasAlerts.length > 0) ||
-                        (car.ibamaEmbargos && car.ibamaEmbargos.length > 0);
-                });
+                    (car.intersectingPublicForests && car.intersectingPublicForests.length > 0) ||
+                    (car.mapBiomasAlerts && car.mapBiomasAlerts.length > 0) ||
+                    (car.ibamaEmbargos && car.ibamaEmbargos.length > 0);
+            });
 
-                return hasCritical ? `
-                    <div class="bg-amber-50 border-l-4 border-amber-500 p-4 text-amber-800 text-sm shadow-sm rounded-r-lg">
-                        <div class="flex items-center gap-2 font-bold mb-1"><i class="ph-warning-octagon-fill text-xl"></i> Alerta de risco detectado</div>
-                        Foi detectado risco ambiental relevante ou status de suspensão nos imóveis analisados. Verifique o detalhamento abaixo.
-                    </div>` : `
-                    <div class="bg-green-50 border-l-4 border-green-500 p-4 text-green-800 text-sm shadow-sm rounded-r-lg">
-                        <div class="flex items-center gap-2 font-bold mb-1"><i class="ph-check-circle-fill text-xl"></i> Conformidade Ambiental</div>
-                        Nenhuma restrição ambiental crítica identificada nas bases consultadas.
-                    </div>`;
-            })()}
+            return hasCritical ? `
+                <div class="bg-[#fff9e6] border-l-4 border-amber-500 p-4 rounded shadow-sm">
+                    <div class="flex items-center gap-2 font-bold text-amber-900 mb-1">
+                        <i class="ph-bold ph-warning text-lg"></i> Alerta de risco detectado
+                    </div>
+                    <p class="text-amber-800 text-sm">Foi detectado risco ambiental relevante ou status de suspensão nos imóveis analisados. Verifique o detalhamento abaixo.</p>
+                </div>` : `
+                <div class="bg-emerald-50 border-l-4 border-emerald-500 p-4 rounded shadow-sm">
+                    <div class="flex items-center gap-2 font-bold text-emerald-900 mb-1">
+                        <i class="ph-bold ph-check-circle text-lg"></i> Conformidade Ambiental
+                    </div>
+                    <p class="text-emerald-800 text-sm">Nenhuma restrição ambiental crítica identificada nas bases consultadas.</p>
+                </div>`;
+        })()}
 
-            <h5 class="text-lg font-bold text-gray-800 flex items-center gap-2 pt-4">
-                <i class="ph-shield-check text-green-600"></i> Detalhamento por Imóvel
-            </h5>`;
+        <h5 class="text-lg font-bold text-slate-800 pt-2 border-b border-slate-200 pb-2">
+            Detalhamento por Imóvel
+        </h5>`;
 
-        metrics.carMetrics.forEach(car => {
-            const props = car.properties || {};
-            const isSuspended = ['SU', 'SUSPENSO'].includes((props.status_imovel || '').toUpperCase());
-            let anosTxt = (car.anos && car.anos.length > 0) ? car.anos.join(', ') : 'Ano não identificado';
-            let modFisc = Number(props.modulos_fiscais || props.m_fiscal || 0);
-            // ✅ Sempre definir ANTES do template string
-            const areaPorAnoObj =
-                (car.areaPorAno && typeof car.areaPorAno === 'object')
-        ? car.areaPorAno
-        : {};
+    // Loop de Imóveis (CAR)
+    metrics.carMetrics.forEach(car => {
+        const props = car.properties || {};
+        const uf = (car.code || "").slice(0, 2).toUpperCase();
+        
+        const statusSicarRaw = (props.status_imovel || 'N/D').toUpperCase();
+        const isSuspended = ['SU', 'SUSPENSO'].includes(statusSicarRaw);
+        const statusPillClass = isSuspended ? 'bg-red-100 text-red-700 border-red-200' : 'bg-emerald-100 text-emerald-700 border-emerald-200';
+        
+        let anosTxt = (car.anos && car.anos.length > 0) ? car.anos.join(', ') : 'Ano não identificado';
+        let modFisc = Number(props.modulos_fiscais || props.m_fiscal || 0);
+        
+        const areaPorAnoObj = (car.areaPorAno && typeof car.areaPorAno === 'object') ? car.areaPorAno : {};
+        const hasProdesYearData = Object.values(areaPorAnoObj).some(v => Number(v) > 0);
+        const hasProdesData = Number(car.deforestationArea || 0) > 0 || Number(car.somaDesmatamentoAnalise || 0) > 0 || hasProdesYearData || (car.prodesData && (car.prodesData.dentro_criterio != null || car.prodesData.dentro_tolerancia != null || car.prodesData.julg_status != null));
 
-            const hasProdesYearData = Object.values(areaPorAnoObj).some(v => Number(v) > 0);
-
-            const hasProdesData =
-                Number(car.deforestationArea || 0) > 0 ||
-                Number(car.somaDesmatamentoAnalise || 0) > 0 ||
-            hasProdesYearData ||
-            (car.prodesData && (
-            car.prodesData.dentro_criterio != null ||
-            car.prodesData.dentro_tolerancia != null ||
-            car.prodesData.julg_status != null
-            ));
-
-            html += `
-            <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-8">
-                <div class="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
-                    <span class="font-mono font-bold text-slate-800">${car.code}</span>
-                    <span class="px-3 py-1 rounded-full text-xs font-bold ${isSuspended ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}">
-                        Status SICAR: ${props.status_imovel || 'N/D'}
-                    </span>
-                </div>
-
-                <div class="p-4 space-y-6">
-                    ${(car.deforestationArea > 0) ? `
-                        <div class="bg-orange-50 border border-orange-400 p-3 rounded-md text-orange-900 text-sm">
-                            <b>Supressão de vegetação detectada (PRODES) no(s) ano(s): ${anosTxt}</b>
-                             ${getProdesDeadlineMessage(modFisc)}
-                        </div>
-                    ` : `<div class="bg-green-50 border border-green-400 p-3 rounded-md text-green-900 text-sm">Nenhuma supressão PRODES identificada (2019-2025).</div>`}
-
-                    <div class="space-y-4">
-    <!-- INFORMAÇÕES CADASTRAIS (FULL WIDTH / VERTICAL) -->
-    <div class="p-3 rounded border bg-white border-gray-200">
-        <h6 class="text-xs font-bold text-gray-400 uppercase mb-2 border-b pb-2">
-        Informações Cadastrais
-        </h6>
-
-        <ul class="space-y-2 text-sm">
-        <li class="flex gap-2">
-            <span class="text-gray-600">Área do Imóvel:</span>
-            <b>${car.area.toFixed(2)} ha</b>
-        </li>
-
-        <li class="flex gap-2">
-            <span class="text-gray-600">Data de Criação:</span>
-            <b>${props.dat_criacao || 'N/D'}</b>
-        </li>
-
-        <li class="flex gap-2">
-            <span class="text-gray-600">Status:</span>
-            <b>${props.status_imovel || 'N/D'}</b>
-        </li>
-
-        <li class="flex gap-2">
-            <span class="text-gray-600">Módulos Fiscais:</span>
-            <b>${modFisc.toFixed(4)}</b>
-        </li>
-
-        <li class="flex gap-2">
-            <span class="text-gray-600">Município/UF:</span>
-            <b>${props.municipio || 'N/D'} - ${props.uf || ''}</b>
-        </li>
-        </ul>
-    </div>
-
-    
-    <!-- PRODES (FULL WIDTH / FORMATO LAUDO TIPO MAPBIOMAS) -->
-                ${hasProdesData ? `
-            <div class="text-xs p-3 rounded border bg-red-50 border-red-200 text-red-900">
-            <h6 class="font-bold uppercase mb-2">Análise Ambiental PRODES</h6>
-
-            <div class="mb-3 border-b border-red-200 pb-2 last:border-0 last:mb-0 last:pb-0">
-            <b>Bioma:</b> ${car.biomaAnalise || 'N/D'}<br>
-            <b>Supressão (19-25):</b> ${(Number(car.deforestationArea || 0)).toFixed(2)} ha<br>
-            <b>Soma Desmatamento:</b> ${(Number(car.somaDesmatamentoAnalise || 0)).toFixed(2)} ha<br>
-
-            <b style="color: #991b1b; background: #fee2e2; padding: 2px 4px; border-radius: 4px; display: inline-block; margin: 4px 0;">
-            Área PRODES dentro do CAR: ${(Number(car.deforestationArea || 0)).toFixed(2)} ha
-            (${(car.area && Number(car.area) > 0) ? ((Number(car.deforestationArea || 0) / Number(car.area)) * 100).toFixed(2) : '0.00'}%)
-            </b><br>
-
-            <b>Dentro do Critério:</b> ${car.prodesData?.dentro_criterio ?? car.prodesData?.dentro_tolerancia ?? 'N/D'}<br>
-            <b>Julgamento PRODES:</b> ${car.prodesData?.julg_status || 'N/D'}
+        html += `
+        <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden mb-8">
+            
+            <!-- HEADER DO IMÓVEL -->
+            <div class="bg-slate-50 px-5 py-4 flex justify-between items-center border-b border-slate-200">
+                <span class="font-mono font-bold text-slate-800 text-base">${car.code}</span>
+                <span class="px-2.5 py-1 rounded text-[11px] font-bold border ${statusPillClass}">
+                    Status SICAR: ${statusSicarRaw}
+                </span>
             </div>
 
-        <!--  Detalhamento por Ano (MESMO ESTILO MapBiomas/IBAMA) -->
-        
-    <div class="mt-3 mb-2 text-xs font-bold uppercase text-red-700">
-        Detalhamento por ano
-        </div>
-
-            ${Object.entries(areaPorAnoObj)
-            .sort((a,b) => Number(a[0]) - Number(b[0]))
-            .filter(([_, area]) => Number(area) > 0)   // não mostra anos zerados
-            .map(([ano, area]) => {
-                const areaHa = Number(area) || 0;
-                const percCar = (car.area && Number(car.area) > 0) ? (areaHa / Number(car.area) * 100) : 0;
-
-                return `
-                <div class="mb-3 border-b border-red-200 pb-2 last:border-0 last:mb-0 last:pb-0">
-                    <b>PRODES ${ano} — Área Total:</b> ${areaHa.toFixed(4)} ha<br>
-                    <b style="color: #991b1b; background: #fee2e2; padding: 2px 4px; border-radius: 4px; display: inline-block; margin: 4px 0;">
-                    Área PRODES ${ano} dentro do CAR: ${areaHa.toFixed(2)} ha (${percCar.toFixed(2)}%)
-                    </b><br>
-                </div>
-                `;
-            }).join('')}
-        </div>
-        ` : ``}
-    </div>
-                    
-
-                    <div class="space-y-4">
-                        <!-- UC DETALHADA -->
-                        <div class="text-xs p-3 rounded border ${car.ucQueryError ? 'bg-gray-100 border-gray-300 text-gray-500' : (car.intersectingUCs && car.intersectingUCs.length > 0 ? 'bg-red-50 border-red-200 text-red-900' : 'bg-green-50 border-green-200 text-green-800')}">
-                            <h6 class="font-bold uppercase mb-2">Sobreposição UC</h6>
-                            ${car.ucQueryError ? 
-                                `<span class="font-bold"><i class="ph-warning"></i> Não foi possível consultar a base de UCs.</span>` : 
-                                ((car.intersectingUCs && car.intersectingUCs.length > 0) ? car.intersectingUCs.map(uc => {
-                                    const p = uc.properties || {};
-                                    return `<div class="mb-3 border-b border-red-200 pb-2 last:border-0 last:mb-0 last:pb-0">
-                                        <b>Nome:</b> ${p.nomeuc || p.NOMEUC || p.nome || 'N/D'} <br>
-                                        <b>Categoria:</b> ${p.siglacateg || p.SIGLACATEG || 'N/D'} <br>
-                                        <b>Esfera Admin:</b> ${p.esferaadm || p.ESFERAADM || 'N/D'} <br>
-                                        <b>Ano Criação:</b> ${p.criacaoano || p.CRIACAOANO || 'N/D'} <br>
-                                        <b>Área Total da UC:</b> ${p.areahaalb ? Number(p.areahaalb).toFixed(2) : 'N/D'} ha<br>
-                                        <b style="color: #991b1b; background: #fee2e2; padding: 2px 4px; border-radius: 4px; display: inline-block; margin: 4px 0;">Área da UC dentro do CAR: ${p._area_interseccao_ha ? p._area_interseccao_ha.toFixed(2) : '0.00'} ha (${p._percentual_interseccao ? p._percentual_interseccao.toFixed(2) : '0.00'}%)</b><br>
-                        
-                                        <b>Ato de Criação:</b> ${p.criacaoato || p.CRIACAOATO || 'N/D'}
-                                    </div>`;
-                                }).join('') : 'Nenhuma unidade de conservação intersecta este CAR.')
-                            }
+            <div class="p-5 space-y-6">
+                
+                <!-- BLOCO: INFORMAÇÕES CADASTRAIS (Estilo Informações do Crédito) -->
+                <div class="bg-slate-50 rounded-xl border border-slate-200 p-5 flex flex-col md:flex-row gap-6 justify-between">
+                    <div class="flex-1">
+                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Informações Cadastrais</p>
+                        <div class="space-y-1.5 text-sm">
+                            <p class="text-slate-500">Área do Imóvel: <b class="text-slate-800 ml-1">${car.area.toFixed(2)} ha</b></p>
+                            <p class="text-slate-500">Módulos Fiscais: <b class="text-slate-800 ml-1">${modFisc.toFixed(4)}</b></p>
+                            <p class="text-slate-500">Município/UF: <b class="text-slate-800 ml-1">${props.municipio || 'N/D'} - ${props.uf || ''}</b></p>
                         </div>
-
-                        <!-- FLORESTAS PÚBLICAS DETALHADAS -->
-                        <div class="text-xs p-3 rounded border ${car.publicForestsQueryError ? 'bg-gray-100 border-gray-300 text-gray-500' : (car.intersectingPublicForests.length > 0 ? 'bg-red-50 border-red-200 text-red-900' : 'bg-green-50 border-green-200 text-green-800')}">
-                            <h6 class="font-bold uppercase mb-2">Florestas Públicas Intersectadas</h6>
-                            ${car.publicForestsQueryError ? 
-                                `<span class="font-bold"><i class="ph-warning"></i> Não foi possível consultar a base de Florestas Públicas.</span>` : 
-                                (car.intersectingPublicForests.length > 0 ? car.intersectingPublicForests.map(f => {
-                                    const p = f.properties || {};
-                                    return `<div class="mb-3 border-b border-green-200 pb-2 last:border-0 last:mb-0 last:pb-0">
-                                        <b>Nome:</b> ${p.nome || 'N/D'} <br>
-                                        <b>Categoria:</b> ${p.categoria || 'N/D'} <br>
-                                        <b>Governo:</b> ${p.governo || 'N/D'} <br>
-                                        <b>Tipo:</b> ${p.tipo || p._TIPO_ || 'N/D'} <br>
-                                        <b>Código CNFP:</b> ${p.codigo || p.cod_cnfp || 'N/D'} <br>
-                                        <b>Área Total da Floresta:</b> ${p.area_ha ? Number(p.area_ha).toFixed(2) : 'N/D'} ha<br>
-                                        <b style="color: #991b1b; background: #fee2e2; padding: 2px 4px; border-radius: 4px; display: inline-block; margin: 4px 0;">Área da Floresta dentro do CAR: ${p._area_interseccao_ha ? p._area_interseccao_ha.toFixed(2) : '0.00'} ha (${p._percentual_interseccao ? p._percentual_interseccao.toFixed(2) : '0.00'}%)</b><br>
-                                        <b>Município/UF:</b> ${p.municipio || 'N/D'} - ${p.uf || p._UF_ || 'N/D'}
-                                    </div>`;
-                                }).join('') : 'Nenhuma floresta pública intersecta este CAR.')
-                            }
+                    </div>
+                    <div class="flex-1">
+                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Situação do Registro</p>
+                        <div class="space-y-1.5 text-sm">
+                            <p class="text-slate-500">Data de Criação: <b class="text-slate-800 ml-1">${props.dat_criacao || 'N/D'}</b></p>
+                            <p class="text-slate-500">Status Oficial: <b class="text-slate-800 ml-1">${props.status_imovel || 'N/D'}</b></p>
                         </div>
-
-                        <!-- MAPBIOMAS DETALHADO -->
-                        <div class="text-xs p-3 rounded border ${car.mapBiomasQueryError ? 'bg-gray-100 border-gray-300 text-gray-500' : (car.mapBiomasAlerts.length > 0 ? 'bg-red-50 border-red-200 text-red-900' : 'bg-green-50 border-green-200 text-green-800')}">
-                            <h6 class="font-bold uppercase mb-2">Alertas MapBiomas Intersectados</h6>
-                            ${car.mapBiomasQueryError ? 
-                                `<span class="font-bold"><i class="ph-warning"></i> Não foi possível consultar os alertas MapBiomas.</span>` : 
-                                (car.mapBiomasAlerts.length > 0 ? car.mapBiomasAlerts.map(mb => `
-                                    <div class="mb-3 border-b border-red-200 pb-2 last:border-0 last:mb-0 last:pb-0">
-                                        <b>Código do Alerta:</b> ${mb.alertCode}<br>
-                                        <b>Detectado em:</b> ${mb.detectedAt ? new Date(mb.detectedAt).toLocaleDateString('pt-BR') : 'N/D'}<br>
-        
-                                        <b>Área Total do Alerta:</b> ${mb.areaHa || 'N/D'} ha<br>
-                                        <b style="color: #991b1b; background: #fee2e2; padding: 2px 4px; border-radius: 4px; display: inline-block; margin: 4px 0;">Área do alerta dentro do CAR: ${mb._area_interseccao_ha ? mb._area_interseccao_ha.toFixed(2) : '0.00'} ha (${mb._percentual_interseccao ? mb._percentual_interseccao.toFixed(2) : '0.00'}%)</b><br>
-                                        <b>Fonte(s):</b> ${Array.isArray(mb.sources) ? mb.sources.join(', ') : (mb.sources || 'N/D')}<br>
-                                        <a href="https://plataforma.alerta.mapbiomas.org/alerta/${mb.alertCode}" target="_blank" class="text-blue-700 font-bold underline mt-1 inline-block">Acessar Laudo Oficial</a>
-                                    </div>
-                                `).join('') : 'Nenhum alerta MapBiomas intersecta este CAR.')
-                            }
-                        </div>
-
-                        <!-- IBAMA DETALHADO -->
-
-    <div class="text-xs p-3 rounded border ${car.ibamaQueryError ? 'bg-gray-100 border-gray-300 text-gray-500' : (car.ibamaEmbargos.length > 0 ? 'bg-purple-50 border-purple-200 text-purple-900' : 'bg-green-50 border-green-200 text-green-800')}">
-        <h6 class="font-bold uppercase mb-2">Embargos IBAMA Intersectados</h6>
-        ${car.ibamaQueryError ? 
-            `<span class="font-bold"><i class="ph-warning"></i> Não foi possível consultar a base do IBAMA.</span>` : 
-            (car.ibamaEmbargos.length > 0 ? car.ibamaEmbargos.map(ib => {
-                // Suporta se 'ib' for o objeto de propriedades diretamente ou a feature
-                const p = ib.properties || ib; 
-                let descricao = p.des_infracao || 'N/D';
-                return `
-                <div class="mb-3 border-b border-purple-200 pb-2 last:border-0 last:mb-0 last:pb-0">
-                    <b>Infrator:</b> ${p.nom_pessoa || 'N/D'} <br>
-                    <b>TAD:</b> ${p.numero_tad || 'N/D'} | <b>Data:</b> ${p.data_tad || 'N/D'} <br>
-                    <b>Área Total Embargada (IBAMA):</b> ${p.qtd_area_desmatada || '0'} ha<br>
-                    <b style="color: #6b21a8; background: #f3e8ff; padding: 2px 4px; border-radius: 4px; display: inline-block; margin: 4px 0;">Área do embargo dentro do CAR: ${p._area_interseccao_ha ? p._area_interseccao_ha.toFixed(2) : '0.00'} ha (${p._percentual_interseccao ? p._percentual_interseccao.toFixed(2) : '0.00'}%)</b><br>
-                    <b>Descrição:</b> <span style='white-space:pre-line;'>${descricao.substring(0,200)}...</span>
-                </div>`;
-            }).join('') : 'Nenhum embargo IBAMA identificado.')
-        }
-    </div>
                     </div>
                 </div>
-            </div>`;
-        });
 
-        html += `</div>`;
-        container.innerHTML = html;
-    }
+                <!-- BLOCO: PRODES -->
+                ${(() => {
+                    if (!car.prodesConsultaOk) {
+                        return `<div class="border border-slate-200 rounded-lg overflow-hidden">
+                                    <div class="bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex items-center gap-2">
+                                        <i class="ph-bold ph-prohibit text-slate-500 text-lg"></i>
+                                        <h6 class="font-bold text-slate-600 text-[11px] uppercase tracking-widest">PRODES (Monitoramento)</h6>
+                                    </div>
+                                    <div class="bg-white p-4 text-sm text-slate-600">Consulta não disponível ou falhou para a UF: ${uf}</div>
+                                </div>`;
+                    }
+                    if (!hasProdesData && car.deforestationArea <= 0) {
+                        return `<div class="border border-slate-200 rounded-lg overflow-hidden">
+                                    <div class="bg-emerald-50 border-b border-emerald-100 px-4 py-2.5 flex items-center gap-2">
+                                        <i class="ph-bold ph-check-circle text-emerald-600 text-lg"></i>
+                                        <h6 class="font-bold text-emerald-800 text-[11px] uppercase tracking-widest">PRODES (Monitoramento)</h6>
+                                    </div>
+                                    <div class="bg-white p-4 text-sm text-slate-600">Nenhuma supressão PRODES identificada (2019-2025).</div>
+                                </div>`;
+                    }
+                    
+                    // Com Restrição PRODES
+                    return `
+                    <div class="border border-slate-200 rounded-lg overflow-hidden">
+                        <div class="bg-red-50 border-b border-red-100 px-4 py-2.5 flex items-center gap-2">
+                            <i class="ph-bold ph-warning-octagon text-red-600 text-lg"></i>
+                            <h6 class="font-bold text-red-800 text-[11px] uppercase tracking-widest">Análise Ambiental PRODES</h6>
+                        </div>
+                        <div class="bg-white p-4 text-sm text-slate-700 space-y-4">
+                            <div class="grid grid-cols-2 gap-4">
+                                <div><span class="text-slate-500 text-xs block mb-0.5">Bioma</span><b class="text-slate-800">${car.biomaAnalise || 'N/D'}</b></div>
+                                <div><span class="text-slate-500 text-xs block mb-0.5">Supressão (19-25)</span><b class="text-red-700">${(Number(car.deforestationArea || 0)).toFixed(2)} ha</b></div>
+                                <div><span class="text-slate-500 text-xs block mb-0.5">Soma Desmatamento</span><b class="text-red-700">${(Number(car.somaDesmatamentoAnalise || 0)).toFixed(2)} ha</b></div>
+                                <div><span class="text-slate-500 text-xs block mb-0.5">Dentro do Critério</span><b class="text-slate-800">${car.prodesData?.dentro_criterio ?? car.prodesData?.dentro_tolerancia ?? 'N/D'}</b></div>
+                        
+                            </div>
+
+                            <div class="bg-slate-50 rounded border border-slate-200 p-2.5 flex justify-between items-center mt-2">
+                                <span class="text-slate-600 text-xs font-medium">Área total PRODES dentro do CAR:</span>
+                                <b class="text-red-700">${(Number(car.deforestationArea || 0)).toFixed(2)} ha (${(car.area && Number(car.area) > 0) ? ((Number(car.deforestationArea || 0) / Number(car.area)) * 100).toFixed(2) : '0.00'}%)</b>
+                            </div>
+                            
+                            ${getProdesDeadlineMessage(modFisc)}
+                            
+                            ${Object.keys(areaPorAnoObj).length > 0 ? `
+                            <div class="pt-4 border-t border-slate-100">
+                                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Detalhamento por ano</p>
+                                <div class="space-y-2">
+                                    ${Object.entries(areaPorAnoObj).sort((a,b) => Number(a[0]) - Number(b[0])).filter(([_, area]) => Number(area) > 0).map(([ano, area]) => {
+                                        const areaHa = Number(area) || 0;
+                                        const percCar = (car.area && Number(car.area) > 0) ? (areaHa / Number(car.area) * 100) : 0;
+                                        return `
+                                        <div class="flex justify-between items-center text-xs pb-2 border-b border-slate-50 last:border-0 last:pb-0">
+                                            <span class="text-slate-600 font-medium">PRODES ${ano}</span>
+                                            <span class="text-slate-800 font-bold">${areaHa.toFixed(2)} ha (${percCar.toFixed(2)}%)</span>
+                                        </div>`;
+                                    }).join('')}
+                                </div>
+                            </div>` : ''}
+                        </div>
+                    </div>`;
+                })()}
+
+                <!-- BLOCO: UNIDADES DE CONSERVAÇÃO -->
+                ${(() => {
+                    if (car.ucQueryError) {
+                        return `<div class="border border-slate-200 rounded-lg overflow-hidden">
+                                    <div class="bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex items-center gap-2">
+                                        <i class="ph-bold ph-prohibit text-slate-500 text-lg"></i>
+                                        <h6 class="font-bold text-slate-600 text-[11px] uppercase tracking-widest">Unidades de Conservação (UC)</h6>
+                                    </div>
+                                    <div class="bg-white p-4 text-sm text-slate-600">Consulta não disponível no momento.</div>
+                                </div>`;
+                    }
+                    if (!car.intersectingUCs || car.intersectingUCs.length === 0) {
+                        return `<div class="border border-slate-200 rounded-lg overflow-hidden">
+                                    <div class="bg-emerald-50 border-b border-emerald-100 px-4 py-2.5 flex items-center gap-2">
+                                        <i class="ph-bold ph-tree text-emerald-600 text-lg"></i>
+                                        <h6 class="font-bold text-emerald-800 text-[11px] uppercase tracking-widest">Unidades de Conservação (UC)</h6>
+                                    </div>
+                                    <div class="bg-white p-4 text-sm text-slate-600">Sem riscos detectados nesta camada.</div>
+                                </div>`;
+                    }
+
+                    return `
+                    <div class="border border-slate-200 rounded-lg overflow-hidden">
+                        <div class="bg-red-50 border-b border-red-100 px-4 py-2.5 flex items-center gap-2">
+                            <i class="ph-bold ph-tree text-red-600 text-lg"></i>
+                            <h6 class="font-bold text-red-800 text-[11px] uppercase tracking-widest">Unidades de Conservação (UC)</h6>
+                        </div>
+                        <div class="bg-white p-4 text-sm text-slate-700 space-y-4">
+                            ${car.intersectingUCs.map((uc, idx) => {
+                                const p = uc.properties || {};
+                                return `
+                                <div class="${idx > 0 ? 'pt-4 border-t border-slate-100' : ''}">
+                                    <p class="font-bold text-slate-800 mb-2">${p.nomeuc || p.NOMEUC || p.nome || 'N/D'}</p>
+                                    <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3 text-xs">
+                                        <div><span class="text-slate-500 block">Categoria:</span> <b class="text-slate-800">${p.siglacateg || p.SIGLACATEG || 'N/D'}</b></div>
+                                        <div><span class="text-slate-500 block">Esfera Admin:</span> <b class="text-slate-800">${p.esferaadm || p.ESFERAADM || 'N/D'}</b></div>
+                                        <div><span class="text-slate-500 block">Ano Criação:</span> <b class="text-slate-800">${p.criacaoano || p.CRIACAOANO || 'N/D'}</b></div>
+                                        <div><span class="text-slate-500 block">Área Total da UC:</span> <b class="text-slate-800">${p.areahaalb ? Number(p.areahaalb).toFixed(2) : 'N/D'} ha</b></div>
+                                        <div class="col-span-2"><span class="text-slate-500 block">Ato de Criação:</span> <b class="text-slate-800">${p.criacaoato || p.CRIACAOATO || 'N/D'}</b></div>
+                                    </div>
+                                    <div class="bg-slate-50 rounded border border-slate-200 p-2.5 flex justify-between items-center">
+                                        <span class="text-slate-600 text-xs font-medium">Área sobreposta:</span>
+                                        <b class="text-red-700">${p._area_interseccao_ha ? p._area_interseccao_ha.toFixed(2) : '0.00'} ha (${p._percentual_interseccao ? p._percentual_interseccao.toFixed(2) : '0.00'}%)</b>
+                                    </div>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                    </div>`;
+                })()}
+
+                 <!-- BLOCO: FLORESTAS PÚBLICAS -->
+                ${(() => {
+                    if (car.publicForestsQueryError) {
+                        return `<div class="border border-slate-200 rounded-lg overflow-hidden">
+                                    <div class="bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex items-center gap-2">
+                                        <i class="ph-bold ph-prohibit text-slate-500 text-lg"></i>
+                                        <h6 class="font-bold text-slate-600 text-[11px] uppercase tracking-widest">Florestas Públicas</h6>
+                                    </div>
+                                    <div class="bg-white p-4 text-sm text-slate-600">Consulta não disponível no momento.</div>
+                                </div>`;
+                    }
+                    if (!car.intersectingPublicForests || car.intersectingPublicForests.length === 0) {
+                        return `<div class="border border-slate-200 rounded-lg overflow-hidden">
+                                    <div class="bg-emerald-50 border-b border-emerald-100 px-4 py-2.5 flex items-center gap-2">
+                                        <i class="ph-bold ph-tree-evergreen text-emerald-600 text-lg"></i>
+                                        <h6 class="font-bold text-emerald-800 text-[11px] uppercase tracking-widest">Florestas Públicas</h6>
+                                    </div>
+                                    <div class="bg-white p-4 text-sm text-slate-600">Sem riscos detectados nesta camada.</div>
+                                </div>`;
+                    }
+
+                    return `
+                    <div class="border border-slate-200 rounded-lg overflow-hidden">
+                        <div class="bg-red-50 border-b border-red-100 px-4 py-2.5 flex items-center gap-2">
+                            <i class="ph-bold ph-tree-evergreen text-red-600 text-lg"></i>
+                            <h6 class="font-bold text-red-800 text-[11px] uppercase tracking-widest">Florestas Públicas</h6>
+                        </div>
+                        <div class="bg-white p-4 text-sm text-slate-700 space-y-4">
+                            ${car.intersectingPublicForests.map((f, idx) => {
+                                const p = f.properties || {};
+                                return `
+                                <div class="${idx > 0 ? 'pt-4 border-t border-slate-100' : ''}">
+                                    <p class="font-bold text-slate-800 mb-2">${p.nome || 'N/D'}</p>
+                                    <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3 text-xs">
+                                        <div><span class="text-slate-500 block">Tipo:</span> <b class="text-slate-800">${p.tipo || p._TIPO_ || 'N/D'}</b></div>
+                                        <div><span class="text-slate-500 block">Categoria:</span> <b class="text-slate-800">${p.categoria || 'N/D'}</b></div>
+                                        <div><span class="text-slate-500 block">Governo:</span> <b class="text-slate-800">${p.governo || 'N/D'}</b></div>
+                                        <div><span class="text-slate-500 block">Código CNFP:</span> <b class="text-slate-800">${p.codigo || p.cod_cnfp || 'N/D'}</b></div>
+                                        <div><span class="text-slate-500 block">Área Total Floresta:</span> <b class="text-slate-800">${p.area_ha ? Number(p.area_ha).toFixed(2) : 'N/D'} ha</b></div>
+                                        <div><span class="text-slate-500 block">Município/UF:</span> <b class="text-slate-800">${p.municipio || 'N/D'} - ${p.uf || p._UF_ || 'N/D'}</b></div>
+                                    </div>
+                                    <div class="bg-slate-50 rounded border border-slate-200 p-2.5 flex justify-between items-center">
+                                        <span class="text-slate-600 text-xs font-medium">Área sobreposta:</span>
+                                        <b class="text-red-700">${p._area_interseccao_ha ? p._area_interseccao_ha.toFixed(2) : '0.00'} ha (${p._percentual_interseccao ? p._percentual_interseccao.toFixed(2) : '0.00'}%)</b>
+                                    </div>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                    </div>`;
+                })()}
+
+                <!-- BLOCO: MAPBIOMAS -->
+                ${(() => {
+                    if (car.mapBiomasQueryError) {
+                        return `<div class="border border-slate-200 rounded-lg overflow-hidden">
+                                    <div class="bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex items-center gap-2">
+                                        <i class="ph-bold ph-prohibit text-slate-500 text-lg"></i>
+                                        <h6 class="font-bold text-slate-600 text-[11px] uppercase tracking-widest">Alertas MapBiomas</h6>
+                                    </div>
+                                    <div class="bg-white p-4 text-sm text-slate-600">Consulta não disponível no momento.</div>
+                                </div>`;
+                    }
+                    if (!car.mapBiomasAlerts || car.mapBiomasAlerts.length === 0) {
+                        return `<div class="border border-slate-200 rounded-lg overflow-hidden">
+                                    <div class="bg-emerald-50 border-b border-emerald-100 px-4 py-2.5 flex items-center gap-2">
+                                        <i class="ph-bold ph-fire text-emerald-600 text-lg"></i>
+                                        <h6 class="font-bold text-emerald-800 text-[11px] uppercase tracking-widest">Alertas MapBiomas</h6>
+                                    </div>
+                                    <div class="bg-white p-4 text-sm text-slate-600">Sem riscos detectados nesta camada.</div>
+                                </div>`;
+                    }
+
+                    return `
+                    <div class="border border-slate-200 rounded-lg overflow-hidden">
+                        <div class="bg-orange-50 border-b border-orange-100 px-4 py-2.5 flex items-center gap-2">
+                            <i class="ph-bold ph-fire text-orange-600 text-lg"></i>
+                            <h6 class="font-bold text-orange-800 text-[11px] uppercase tracking-widest">Alertas MapBiomas</h6>
+                        </div>
+                        <div class="bg-white p-4 text-sm text-slate-700 space-y-4">
+                            ${car.mapBiomasAlerts.map((mb, idx) => `
+                                <div class="${idx > 0 ? 'pt-4 border-t border-slate-100' : ''}">
+                                    <p class="font-bold text-slate-800 mb-2">Código do Alerta: ${mb.alertCode}</p>
+                                    <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3 text-xs">
+                                        <div><span class="text-slate-500 block">Detectado em:</span> <b class="text-slate-800">${mb.detectedAt ? new Date(mb.detectedAt).toLocaleDateString('pt-BR') : 'N/D'}</b></div>
+                                        <div><span class="text-slate-500 block">Área Total do Alerta:</span> <b class="text-slate-800">${mb.areaHa || 'N/D'} ha</b></div>
+                                        <div class="col-span-2 md:col-span-1"><span class="text-slate-500 block">Fonte(s):</span> <b class="text-slate-800">${Array.isArray(mb.sources) ? mb.sources.join(', ') : (mb.sources || 'N/D')}</b></div>
+                                    </div>
+                                    <div class="bg-slate-50 rounded border border-slate-200 p-2.5 flex justify-between items-center mb-2">
+                                        <span class="text-slate-600 text-xs font-medium">Área sobreposta:</span>
+                                        <b class="text-orange-700">${mb._area_interseccao_ha ? mb._area_interseccao_ha.toFixed(2) : '0.00'} ha (${mb._percentual_interseccao ? mb._percentual_interseccao.toFixed(2) : '0.00'}%)</b>
+                                    </div>
+                                    <a href="https://plataforma.alerta.mapbiomas.org/alerta/${mb.alertCode}" target="_blank" class="text-blue-600 text-xs font-bold hover:underline flex items-center gap-1"><i class="ph-bold ph-link"></i> Acessar Laudo Oficial</a>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>`;
+                })()}
+
+                <!-- BLOCO: IBAMA -->
+                ${(() => {
+                    if (car.ibamaQueryError) {
+                        return `<div class="border border-slate-200 rounded-lg overflow-hidden">
+                                    <div class="bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex items-center gap-2">
+                                        <i class="ph-bold ph-prohibit text-slate-500 text-lg"></i>
+                                        <h6 class="font-bold text-slate-600 text-[11px] uppercase tracking-widest">Embargos IBAMA</h6>
+                                    </div>
+                                    <div class="bg-white p-4 text-sm text-slate-600">Consulta não disponível no momento.</div>
+                                </div>`;
+                    }
+                    if (!car.ibamaEmbargos || car.ibamaEmbargos.length === 0) {
+                        return `<div class="border border-slate-200 rounded-lg overflow-hidden">
+                                    <div class="bg-emerald-50 border-b border-emerald-100 px-4 py-2.5 flex items-center gap-2">
+                                        <i class="ph-bold ph-warning text-emerald-600 text-lg"></i>
+                                        <h6 class="font-bold text-emerald-800 text-[11px] uppercase tracking-widest">Embargos IBAMA</h6>
+                                    </div>
+                                    <div class="bg-white p-4 text-sm text-slate-600">Sem riscos detectados nesta camada.</div>
+                                </div>`;
+                    }
+
+                    return `
+                    <div class="border border-slate-200 rounded-lg overflow-hidden">
+                        <div class="bg-purple-50 border-b border-purple-100 px-4 py-2.5 flex items-center gap-2">
+                            <i class="ph-bold ph-warning text-purple-600 text-lg"></i>
+                            <h6 class="font-bold text-purple-800 text-[11px] uppercase tracking-widest">Embargos IBAMA</h6>
+                        </div>
+                        <div class="bg-white p-4 text-sm text-slate-700 space-y-4">
+                            ${car.ibamaEmbargos.map((ib, idx) => {
+                                const p = ib.properties || ib; 
+                                let descricao = p.des_infracao || 'N/D';
+                                return `
+                                <div class="${idx > 0 ? 'pt-4 border-t border-slate-100' : ''}">
+                                    <p class="font-bold text-slate-800 mb-2 text-xs uppercase text-slate-500">Infrator: <span class="text-slate-800 normal-case ml-1">${p.nom_pessoa || 'N/D'}</span></p>
+                                    <div class="grid grid-cols-2 gap-3 mb-3 text-xs">
+                                        <div><span class="text-slate-500 block">TAD / Data:</span> <b class="text-slate-800">${p.numero_tad || 'N/D'} | ${p.data_tad || 'N/D'}</b></div>
+                                        <div><span class="text-slate-500 block">Área Total Embargo:</span> <b class="text-slate-800">${p.qtd_area_desmatada || '0'} ha</b></div>
+                                    </div>
+                                    <p class="text-xs text-slate-600 mb-3 bg-slate-50 p-2 rounded border border-slate-100 line-clamp-3" title="${descricao}">${descricao}</p>
+                                    
+                                    <div class="bg-slate-50 rounded border border-slate-200 p-2.5 flex justify-between items-center">
+                                        <span class="text-slate-600 text-xs font-medium">Área sobreposta:</span>
+                                        <b class="text-purple-700">${p._area_interseccao_ha ? p._area_interseccao_ha.toFixed(2) : '0.00'} ha (${p._percentual_interseccao ? p._percentual_interseccao.toFixed(2) : '0.00'}%)</b>
+                                    </div>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                    </div>`;
+                })()}
+
+            </div>
+        </div>`;
+    });
+
+    html += `</div>`;
+    container.innerHTML = html;
+}
+
     function closeRelatorioModal() {
         document.getElementById('relatorioModal').style.display = 'none';
         // Reinicia para a aba Resumo ao fechar
@@ -4337,8 +4674,7 @@ function populateReportModal() {
     `;
     
     // 3. Injeta o Resumo com a borda (summary-wrapper) no topo da aba de Linha do Tempo
-    // Usamos o container resumo-cards que agora deve estar dentro da tab-timeline no seu HTML
-    const resumoEl = document.getElementById('resumo-cards');
+     const resumoEl = document.getElementById('resumo-cards');
     if (resumoEl) {
         resumoEl.className = "summary-wrapper mb-6"; // Garante a classe da borda envolta
         resumoEl.innerHTML = `
@@ -4652,159 +4988,216 @@ const writeLine = (label, value, isAlert = false) => {
   currentY += (splitVal.length * 5.5);
 };
 
-        // Função de Bloco Colorido Dinâmico (Listas Verticais para UC, FP, etc)
-// Função de Bloco Colorido Dinâmico (Listas Verticais para UC, FP, etc)
-const drawDynamicBox = (title, items, emptyMsg, colors) => {
-    // Se não houver itens, usa a paleta enviada (que será a verde conforme lógica abaixo)
-    if (!items || items.length === 0) {
-        checkPageBreak(15);
-        doc.setFillColor(...colors.bg); doc.setDrawColor(...colors.border);
-        doc.rect(margin, currentY, pageWidth - (margin * 2), 14, 'FD');
-        doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(0, 0, 0);
-        doc.text(title.toUpperCase(), margin + 3, currentY + 6);
-        doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(50, 50, 50);
-        doc.text(emptyMsg, margin + 3, currentY + 11);
-        currentY += 18;
-        return;
+ 
+ 
+        // 1. PREPARAÇÃO DO MAPA (Fora do Loop)
+// Liga a legenda e camadas antes de qualquer print
+ligarTodasAsCamadas(); 
+map.invalidateSize();
+map.stop(); // Interrompe qualquer movimento residual
+       
+
+// Espera o layout da legenda se estabilizar
+await new Promise(resolve => setTimeout(resolve, 1000));
+// 2. INÍCIO DO LOOP DOS CARS
+for (let i = 0; i < metrics.carMetrics.length; i++) {
+    const car = metrics.carMetrics[i];
+    const props = carProperties[i] || car.properties || {};
+    const modFisc = parseFloat(props.modulos_fiscais || props.m_fiscal || 0);
+    
+    // Cabeçalho do Imóvel no PDF
+    checkPageBreak(40);
+    doc.setFillColor(232, 245, 233);
+    doc.rect(margin, currentY, pageWidth - (margin*2), 10, 'F');
+    doc.setFont("helvetica", "bold"); doc.setTextColor(47, 130, 53); doc.setFontSize(11);
+    doc.text(`IMÓVEL: ${car.code}`, margin + 3, currentY + 7);
+    currentY += 15;
+
+    // 3. FOCO NO CAR (Sem animação para não deslocar)
+    let layerToFocus = carCodeLayers[i] || carLayers[i];
+    if (layerToFocus) {
+        // animate: false garante que o print seja tirado na coordenada exata
+        map.fitBounds(layerToFocus.getBounds(), { padding: [40, 40], animate: false });
+        map.invalidateSize(); // Re-sincroniza camadas após o pulo do zoom
+        
+        // Espera os blocos de satélite (Tiles) carregarem na nova posição
+        await new Promise(r => setTimeout(r, 1800)); 
     }
 
-    checkPageBreak(10);
-    doc.setFillColor(...colors.bg); doc.setDrawColor(...colors.border);
-    doc.rect(margin, currentY, pageWidth - (margin * 2), 8, 'F');
-    doc.line(margin, currentY, pageWidth - margin, currentY);
-    doc.line(margin, currentY, margin, currentY + 8);
-    doc.line(pageWidth - margin, currentY, pageWidth - margin, currentY + 8);
-    
-    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(0, 0, 0);
-    doc.text(title.toUpperCase(), margin + 3, currentY + 5);
-    currentY += 8;
-
-    items.forEach((item, idx) => {
-        if (idx > 0) {
-            doc.setFillColor(...colors.bg); doc.rect(margin, currentY, pageWidth - (margin * 2), 4, 'F');
-            doc.line(margin, currentY, margin, currentY + 4); doc.line(pageWidth - margin, currentY, pageWidth - margin, currentY + 4);
-            doc.setDrawColor(...colors.border);
-            doc.line(margin + 2, currentY + 2, pageWidth - margin - 2, currentY + 2);
-            currentY += 4;
-        }
-
-        item.forEach(line => {
-            doc.setFont("helvetica", "bold"); doc.setFontSize(9); // RESET DE FONTE AQUI
-            const labelWidth = doc.getTextWidth(line.l) + 1;
-            const splitVal = doc.splitTextToSize(String(line.v), pageWidth - margin*2 - 6 - labelWidth);
-            const lineH = splitVal.length * 5;
-
-            if (checkPageBreak(lineH + 2)) {
-                doc.setFillColor(...colors.bg); doc.setDrawColor(...colors.border);
-                doc.rect(margin, currentY, pageWidth - (margin * 2), 2, 'F');
-                doc.line(margin, currentY, pageWidth - margin, currentY);
-                doc.line(margin, currentY, margin, currentY + 2);
-                doc.line(pageWidth - margin, currentY, pageWidth - margin, currentY + 2);
-                currentY += 2;
-                doc.setFont("helvetica", "bold"); doc.setFontSize(9); // RE-APLICA APÓS QUEBRA
-            }
-
-            doc.setFillColor(...colors.bg); doc.setDrawColor(...colors.border);
-            doc.rect(margin, currentY, pageWidth - (margin * 2), lineH, 'F');
-            doc.line(margin, currentY, margin, currentY + lineH);
-            doc.line(pageWidth - margin, currentY, pageWidth - margin, currentY + lineH);
-
-            doc.setFont("helvetica", "bold"); doc.setTextColor(0, 0, 0);
-            doc.text(line.l, margin + 3, currentY + 4);
-
-             doc.setFont("helvetica", "normal"); 
-
-// Define a cor ANTES de escrever o texto
-             if (line.url) {
-                 doc.setTextColor(0, 0, 255); // Azul
-             } else {
-                 doc.setTextColor(0, 0, 0);   // Preto
-             }
-
-             doc.text(splitVal, margin + 3 + labelWidth, currentY + 4);
-
-             if (line.url) { 
-                 const linkWidth = doc.getTextWidth(line.v);
-                 doc.link(margin + 3 + labelWidth, currentY, linkWidth, 5, { url: line.url });
-    
-    // Adiciona o sublinhado azul para parecer um link
-                 doc.setDrawColor(0, 0, 255);
-                 doc.line(margin + 3 + labelWidth, currentY + 4.5, margin + 3 + labelWidth + linkWidth, currentY + 4.5);
-    
-    // Reseta a cor preto para a próxima linha não sair azul
-               doc.setTextColor(0, 0, 0);
-             }
-            currentY += lineH;
-        });
-    });
-    
-    doc.setFillColor(...colors.bg); doc.setDrawColor(...colors.border);
-    doc.rect(margin, currentY, pageWidth - (margin * 2), 2, 'F');
-    doc.line(margin, currentY, margin, currentY + 2);
-    doc.line(pageWidth - margin, currentY, pageWidth - margin, currentY + 2);
-    currentY += 2;
-    doc.line(margin, currentY, pageWidth - margin, currentY); 
-    currentY += 6;
-};
-
-
-const pdfColorRed    = { bg: [254, 242, 242], border: [254, 202, 202], title: [0, 0, 0], text: [0, 0, 0] };
-const pdfColorOrange = { bg: [255, 247, 237], border: [254, 235, 200], title: [0, 0, 0], text: [0, 0, 0] };
-const pdfColorGreen  = { bg: [240, 253, 244], border: [187, 247, 208], title: [0, 0, 0], text: [0, 0, 0] };
-const pdfColorGray   = { bg: [249, 250, 251], border: [229, 231, 235], title: [0, 0, 0], text: [0, 0, 0] };
-const pdfColorPurple = { bg: [243, 232, 255], border: [233, 213, 255], title: [0, 0, 0], text: [0, 0, 0] };
-
-        // LOOP DOS CARS
-        for (let i = 0; i < metrics.carMetrics.length; i++) {
-            const car = metrics.carMetrics[i];
-            const props = carProperties[i] || car.properties || {};
-            const modFisc = parseFloat(props.modulos_fiscais || props.m_fiscal || 0);
+    // 4. CAPTURA DA IMAGEM
+    const mapImg = await captureMapImage();
+    if (mapImg) {
+        const imgP = doc.getImageProperties(mapImg);
+        let imgH = (imgP.height * (pageWidth - margin * 2)) / imgP.width;
+        if (imgH > 90) imgH = 90;
+        checkPageBreak(imgH + 10);
+        doc.addImage(mapImg, 'PNG', margin, currentY, pageWidth - (margin * 2), imgH);
+        doc.setDrawColor(200); doc.rect(margin, currentY, pageWidth - (margin * 2), imgH, 'S');
+        currentY += imgH + 10;
+    }
+         // ==========================================
+            // BLOCO: INFORMAÇÕES CADASTRAIS (ESTILO MODAL EM 2 COLUNAS)
+            // ==========================================
+            currentY += 2;
+            doc.setFillColor(248, 250, 252); // bg-slate-50
+            doc.setDrawColor(226, 232, 240); // border-slate-200
+            doc.roundedRect(margin, currentY, pageWidth - (margin * 2), 26, 2, 2, 'FD');
             
-            checkPageBreak(40);
+            const col2X = margin + ((pageWidth - margin*2) / 2) + 5;
+
+            // Títulos das Colunas
+            doc.setFontSize(8.5); doc.setTextColor(148, 163, 184); doc.setFont("helvetica", "bold");
+            doc.text("INFORMAÇÕES CADASTRAIS", margin + 4, currentY + 5);
+            doc.text("SITUAÇÃO DO REGISTRO", col2X, currentY + 5);
             
-            doc.setFillColor(232, 245, 233);
-            doc.rect(margin, currentY, pageWidth - (margin*2), 10, 'F');
-            doc.setFont("helvetica", "bold"); doc.setTextColor(47, 130, 53); doc.setFontSize(11);
-            doc.text(`IMÓVEL: ${car.code}`, margin + 3, currentY + 7);
-            currentY += 15;
+            // Linha 1 de dados
+            doc.setFontSize(9.5); doc.setTextColor(100, 116, 139); doc.setFont("helvetica", "normal");
+            doc.text("Área do Imóvel:", margin + 4, currentY + 11);
+            let valX = margin + 4 + doc.getTextWidth("Área do Imóvel: ");
+            doc.setTextColor(30, 41, 59); doc.setFont("helvetica", "bold");
+            doc.text(`${car.area?.toFixed(2) || 'N/D'} ha`, valX, currentY + 11);
 
-            let layerToFocus = carCodeLayers[i] || carLayers[i];
-            if (layerToFocus) {
-                map.fitBounds(layerToFocus.getBounds(), { padding: [40, 40], animate: false });
-                await new Promise(r => setTimeout(r, 900));
-            }
+            doc.setTextColor(100, 116, 139); doc.setFont("helvetica", "normal");
+            doc.text("Data de Criação:", col2X, currentY + 11);
+            let val2X = col2X + doc.getTextWidth("Data de Criação: ");
+            doc.setTextColor(30, 41, 59); doc.setFont("helvetica", "bold");
+            doc.text(`${props.dat_criacao || 'N/D'}`, val2X, currentY + 11);
 
-            const mapImg = await captureMapImage();
-            if (mapImg) {
-                const imgP = doc.getImageProperties(mapImg);
-                let imgH = (imgP.height * (pageWidth - margin * 2)) / imgP.width;
-                if (imgH > 90) imgH = 90;
-                checkPageBreak(imgH + 10);
-                doc.addImage(mapImg, 'PNG', margin, currentY, pageWidth - (margin * 2), imgH);
-                doc.setDrawColor(200); doc.rect(margin, currentY, pageWidth - (margin * 2), imgH, 'S');
-                currentY += imgH + 10;
-            }
+            // Linha 2 de dados
+            doc.setTextColor(100, 116, 139); doc.setFont("helvetica", "normal");
+            doc.text("Módulos Fiscais:", margin + 4, currentY + 17);
+            valX = margin + 4 + doc.getTextWidth("Módulos Fiscais: ");
+            doc.setTextColor(30, 41, 59); doc.setFont("helvetica", "bold");
+            doc.text(`${props.modulos_fiscais !== undefined ? props.modulos_fiscais : (props.m_fiscal || '0')}`, valX, currentY + 17);
 
-            // DADOS BÁSICOS
-            doc.setFontSize(11); doc.setTextColor(40); doc.setFont("helvetica", "bold");
-            doc.text("Informações do Imóvel", margin, currentY); currentY += 6;
-            
-            writeLine("Área:", `${car.area?.toFixed(2) || 'N/D'} ha`);
-            writeLine("Módulos Fiscais:", `${props.modulos_fiscais !== undefined ? props.modulos_fiscais : (props.m_fiscal || '0')}`);
-            writeLine("Município/UF:", `${props.municipio || 'N/D'} - ${props.uf || ''}`);
-            writeLine("Status / Condição:", `${props.status_imovel || 'N/D'} (${props.condicao_imovel || 'N/D'})`);
-            writeLine("Última Atualização:", `${props.data_atualizacao || props.data_ultima_alteracao || 'N/D'}`);
-            writeLine("Data de Criação:", `${props.dat_criacao || 'N/D'}`);
-            currentY += 4;
+            doc.setTextColor(100, 116, 139); doc.setFont("helvetica", "normal");
+            doc.text("Status Oficial:", col2X, currentY + 17);
+            val2X = col2X + doc.getTextWidth("Status Oficial: ");
+            doc.setTextColor(30, 41, 59); doc.setFont("helvetica", "bold");
+            doc.text(`${props.status_imovel || 'N/D'}`, val2X, currentY + 17);
 
+            // Linha 3 de dados
+            doc.setTextColor(100, 116, 139); doc.setFont("helvetica", "normal");
+            doc.text("Município/UF:", margin + 4, currentY + 23);
+            valX = margin + 4 + doc.getTextWidth("Município/UF: ");
+            doc.setTextColor(30, 41, 59); doc.setFont("helvetica", "bold");
+            doc.text(`${props.municipio || 'N/D'} - ${props.uf || ''}`, valX, currentY + 23);
+
+            currentY += 34; 
             
             checkPageBreak(25);
-            doc.setFontSize(11);
-            doc.setTextColor(40);
-            doc.setFont("helvetica", "bold");
+            doc.setFontSize(11); doc.setTextColor(15, 23, 42); doc.setFont("helvetica", "bold");
             doc.text("Análise Ambiental Detalhada", margin, currentY);
-            currentY += 6;
+            currentY += 5;
 
+            // ==========================================
+            // NOVA FUNÇÃO DRAW DYNAMIC BOX (SEM LINHAS INTERNAS)
+            // ==========================================
+            const drawDynamicBox = (title, items, emptyMsg, colors) => {
+                const boxWidth = pageWidth - (margin * 2);
+                const headerH = 8;
+                
+                // CASO VAZIO
+                if (!items || items.length === 0) {
+                    checkPageBreak(20);
+                    // Cabeçalho
+                    doc.setFillColor(...colors.bg); doc.setDrawColor(...colors.border);
+                    doc.rect(margin, currentY, boxWidth, headerH, 'FD');
+                    doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...colors.title);
+                    doc.text(`${colors.icon}  ${title.toUpperCase()}`, margin + 3, currentY + 5.5);
+                    currentY += headerH;
+
+                    // Corpo (Sempre Branco)
+                    doc.setFillColor(255, 255, 255); doc.rect(margin, currentY, boxWidth, 10, 'FD');
+                    doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(100, 116, 139);
+                    doc.text(emptyMsg, margin + 4, currentY + 6);
+                    currentY += 14;
+                    return;
+                }
+
+                // CASO COM DADOS
+                checkPageBreak(15);
+                // Cabeçalho
+                doc.setFillColor(...colors.bg); doc.setDrawColor(...colors.border);
+                doc.rect(margin, currentY, boxWidth, headerH, 'FD');
+                doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...colors.title);
+                doc.text(`${colors.icon}  ${title.toUpperCase()}`, margin + 3, currentY + 5.5);
+                currentY += headerH;
+
+                items.forEach((item, idx) => {
+                    if (idx > 0) {
+                        // Divisória invisível (apenas espaço em branco com bordas laterais coloridas)
+                        const spaceH = 4;
+                        if (checkPageBreak(spaceH)) {
+                            doc.setDrawColor(...colors.border);
+                            doc.line(margin, currentY, margin + boxWidth, currentY); 
+                        }
+                        doc.setFillColor(255, 255, 255);
+                        doc.rect(margin, currentY, boxWidth, spaceH, 'F'); 
+                        doc.setDrawColor(...colors.border);
+                        doc.line(margin, currentY, margin, currentY + spaceH); // Borda Esquerda
+                        doc.line(margin + boxWidth, currentY, margin + boxWidth, currentY + spaceH); // Borda Direita
+                        currentY += spaceH;
+                    }
+
+                    item.forEach(line => {
+                        doc.setFont("helvetica", "bold"); doc.setFontSize(8.5);
+                        const labelWidth = doc.getTextWidth(line.l) + 1;
+                        const splitVal = doc.splitTextToSize(String(line.v), boxWidth - 6 - labelWidth);
+                        const lineH = splitVal.length * 4.5 + 1.5;
+
+                        if (checkPageBreak(lineH + 2)) {
+                            doc.setDrawColor(...colors.border);
+                            doc.line(margin, currentY, margin + boxWidth, currentY);
+                        }
+
+                        // Fundo da linha (Branco - 'F' preenche sem contorno interno)
+                        doc.setFillColor(255, 255, 255); 
+                        doc.rect(margin, currentY, boxWidth, lineH, 'F'); 
+
+                        // BORDAS LATERAIS APENAS
+                        doc.setDrawColor(...colors.border);
+                        doc.line(margin, currentY, margin, currentY + lineH);
+                        doc.line(margin + boxWidth, currentY, margin + boxWidth, currentY + lineH);
+
+                        doc.setFont("helvetica", "bold"); doc.setTextColor(100, 116, 139); 
+                        doc.text(line.l, margin + 4, currentY + 4);
+
+                        doc.setFont("helvetica", "normal"); 
+                        if (line.url) doc.setTextColor(37, 99, 235); 
+                        else doc.setTextColor(51, 65, 85); 
+
+                        doc.text(splitVal, margin + 4 + labelWidth, currentY + 4);
+
+                        if (line.url) { 
+                            const linkWidth = doc.getTextWidth(line.v);
+                            doc.link(margin + 4 + labelWidth, currentY, linkWidth, 5, { url: line.url });
+                            doc.setDrawColor(37, 99, 235);
+                            doc.line(margin + 4 + labelWidth, currentY + 4.5, margin + 4 + labelWidth + linkWidth, currentY + 4.5);
+                        }
+                        currentY += lineH;
+                    });
+                });
+                
+                // Rodapé (Preenche padding branco final e fecha a linha inferior)
+                doc.setFillColor(255, 255, 255); 
+                doc.rect(margin, currentY, boxWidth, 3, 'F'); 
+                doc.setDrawColor(...colors.border);
+                doc.line(margin, currentY, margin, currentY + 3);
+                doc.line(margin + boxWidth, currentY, margin + boxWidth, currentY + 3);
+                currentY += 3;
+                doc.line(margin, currentY, margin + boxWidth, currentY); // Linha inferior final fechando a caixa
+                currentY += 6;
+            };
+
+            // CORES (COM ÍCONES EM TEXTO)
+            const pdfColorRed    = { bg: [254, 242, 242], border: [254, 202, 202], title: [185, 28, 28], icon: '(!)' };
+            const pdfColorOrange = { bg: [255, 247, 237], border: [253, 186, 116], title: [194, 65, 12], icon: '(!)' };
+            const pdfColorGreen  = { bg: [240, 253, 244], border: [167, 243, 208], title: [21, 128, 61], icon: '(v)' };
+            const pdfColorGray   = { bg: [248, 250, 252], border: [226, 232, 240], title: [100, 116, 139], icon: '(-)' };
+            const pdfColorPurple = { bg: [250, 245, 255], border: [233, 213, 255], title: [126, 34, 206], icon: '(!)' };
+
+            // O código segue normalmente com o "const prodesItems = [];" a partir daqui
 // =======================
 // PRODES (PADRÃO drawDynamicBox) — VERMELHO IGUAL MAPBIOMAS
 // =======================
@@ -5146,13 +5539,37 @@ const drawTimelineSection = (title, eventsArray) => {
             "• IBAMA: Cadastro Nacional de Autuações e Embargos - https://siscom.ibama.gov.br/geoserver/",
             "• Serviço Florestal Brasileiro: Cadastro de Florestas Públicas do Brasil - https://sistemas.florestal.gov.br/geoserver/",
             "• ICMBio: Cadastro de Unidades de Conservação Federais - https://geoservicos.inde.gov.br/geoserver/ICMBio/"
-        ];
+         ];
         
         bases.forEach(b => { 
             const splitB = doc.splitTextToSize(b, pageWidth - (margin * 2));
             doc.text(splitB, margin, currentY); 
             currentY += (splitB.length * 5); 
         });
+        currentY += 8;
+        doc.setFontSize(11); doc.setTextColor(40); doc.setFont("helvetica", "bold");
+        doc.text("Resolução CMN 5.303/2026: Novos prazos de implementação do PRODES", margin, currentY);
+        currentY += 8;
+
+        doc.setFontSize(9); doc.setTextColor(60); doc.setFont("helvetica", "normal");
+        const regras1 = [
+
+            "",
+            "O calendário de exigência e verificação de desmatamento passou a ser escalonado pelo porte da propriedade rural:",
+            "a) 4 de janeiro de 2027: Imóveis com mais de 15 módulos fiscais.",
+            "b) 1º de julho de 2027: Propriedades entre 4 e 15 módulos fiscais.",
+            "c) 3 de janeiro de 2028: Imóveis com até 4 módulos fiscais, assentamentos e comunidades tradicionais.",
+                ];
+                regras1.forEach(r => {
+  if (r === "") {
+    currentY += 2;
+    return;
+  }
+  const splitR = doc.splitTextToSize(r, pageWidth - (margin * 2));
+  doc.text(splitR, margin, currentY);
+  currentY += (splitR.length * 5);
+});
+
 
         currentY += 8;
         doc.setFontSize(11); doc.setTextColor(40); doc.setFont("helvetica", "bold");
@@ -5197,6 +5614,7 @@ const drawTimelineSection = (title, eventsArray) => {
             doc.text(splitR, margin, currentY);
             currentY += (splitR.length * 5);
         });
+
 
         const totalPages = doc.internal.getNumberOfPages();
         for (let j = 1; j <= totalPages; j++) {
@@ -5288,7 +5706,7 @@ const drawTimelineSection = (title, eventsArray) => {
         }
         console.log('Inicializando mapa...');
 
-        map = L.map('map', { maxZoom: 22 }).setView([-15, -55], 4);
+        map = L.map('map', { maxZoom: 22, preferCanvas:true}).setView([-15, -55], 4);
         console.log('Mapa criado:', map);
         L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { maxZoom: 22 }).addTo(map);
 
@@ -8593,21 +9011,35 @@ if (tempGroupedData.length === 0 && nextGlebaKey) {
 
             glebasToFixCrossings.forEach((c, idx) => {
                 const gleba = glebaData.find(g => g.glebaIndex === c.glebaIndex);
-                const name = `Gleba ${c.glebaIndex} (Anel ${c.ringIdx + 1})`;
-                const coordStr = `${c.intr[0].toFixed(6)}, ${c.intr[1].toFixed(6)}`;
-                const attempts = crossingCorrectionAttempts.get(c.glebaIndex) || 0;
-                const attemptsInfo = attempts > 0 ? ` <span class="text-orange-600 font-semibold">[${attempts}/2 tentativas]</span>` : '';
-                const isDisabled = attempts >= 2;
-                
-                crossHtml += `
-                    <div class="flex items-center space-x-2">
-                        <input type="checkbox" id="fix-cross-${idx}" ${isDisabled ? '' : 'checked'} ${isDisabled ? 'disabled' : ''} class="h-4 w-4 text-red-600 border-gray-300 rounded focus:ring-red-500">
-                        <label for="fix-cross-${idx}" class="text-sm font-medium ${isDisabled ? 'text-gray-400' : 'text-slate-800'}">
-                            ${name} — Ponto de cruzamento: ${coordStr}${attemptsInfo}
-                            ${isDisabled ? ' <span class="text-red-600">(Limite atingido - corrija manualmente)</span>' : ''}
-                        </label>
-                    </div>
-                `;
+                // Se for cruzamento (tem intr/ringIdx)
+                if (c.intr && typeof c.ringIdx !== 'undefined') {
+                    const name = `Gleba ${c.glebaIndex} (Anel ${c.ringIdx + 1})`;
+                    const coordStr = `${c.intr[0].toFixed(6)}, ${c.intr[1].toFixed(6)}`;
+                    const attempts = crossingCorrectionAttempts.get(c.glebaIndex) || 0;
+                    const attemptsInfo = attempts > 0 ? ` <span class="text-orange-600 font-semibold">[${attempts}/2 tentativas]</span>` : '';
+                    const isDisabled = attempts >= 2;
+                    crossHtml += `
+                        <div class="flex items-center space-x-2">
+                            <input type="checkbox" id="fix-cross-${idx}" ${isDisabled ? '' : 'checked'} ${isDisabled ? 'disabled' : ''} class="h-4 w-4 text-red-600 border-gray-300 rounded focus:ring-red-500">
+                            <label for="fix-cross-${idx}" class="text-sm font-medium ${isDisabled ? 'text-gray-400' : 'text-slate-800'}">
+                                ${name} — Ponto de cruzamento: ${coordStr}${attemptsInfo}
+                                ${isDisabled ? ' <span class="text-red-600">(Limite atingido - corrija manualmente)</span>' : ''}
+                            </label>
+                        </div>
+                    `;
+                } else if (c.duplicatedPoints && Array.isArray(c.duplicatedPoints)) {
+                    // Se for duplicidade de pontos
+                    const name = `Gleba ${c.glebaIndex} (Anel Externo)`;
+                    crossHtml += `
+                        <div class="flex items-start space-x-2">
+                            <input type="checkbox" id="fix-dup-${idx}" checked class="h-4 w-4 text-red-600 border-gray-300 rounded focus:ring-red-500">
+                            <label for="fix-dup-${idx}" class="text-sm font-medium text-slate-800">
+                                ${name} — <span class="text-red-600 font-semibold">${c.duplicatedPoints.length} ponto(s) duplicado(s) consecutivo(s)</span><br>
+                                <span class="text-xs text-gray-600">Índices duplicados: ${c.duplicatedPoints.map(d => d.idx).join(', ')}</span>
+                            </label>
+                        </div>
+                    `;
+                }
             });
 
             crossHtml += '</div>';
@@ -8886,16 +9318,45 @@ if (data.length > 0) {
       
       let initialErrorListForVisualDisplay = []; 
 
-      glebaData.forEach((g) => {
-        const subglebaGroups = g.points.reduce((acc, p) => {
-            const index = p.subglebaIndex || '00';
-            if (!acc[index]) acc[index] = [];
-            acc[index].push(p);
-            return acc;
-        }, {});
+            glebaData.forEach((g) => {
+                const subglebaGroups = g.points.reduce((acc, p) => {
+                        const index = p.subglebaIndex || '00';
+                        if (!acc[index]) acc[index] = [];
+                        acc[index].push(p);
+                        return acc;
+                }, {});
+
+                // NOVO: Validação de pontos duplicados consecutivos no anel externo
+                const outerRingPoints = (subglebaGroups['00'] || []).filter(p => p !== undefined);
+                let duplicatedPoints = [];
+                for (let i = 1; i < outerRingPoints.length; i++) {
+                    const prev = outerRingPoints[i - 1];
+                    const curr = outerRingPoints[i];
+                    if (almostEqual(prev.lat, curr.lat) && almostEqual(prev.lon, curr.lon)) {
+                        duplicatedPoints.push({ idx: i, lat: curr.lat, lon: curr.lon });
+                    }
+                }
+                if (duplicatedPoints.length > 0) {
+                    const msg = `ERRO Gleba ${g.glebaIndex}: Encontrados ${duplicatedPoints.length} ponto(s) duplicado(s) consecutivos de latitude/longitude no anel externo. Remova ou corrija para garantir a integridade do polígono.`;
+                    errors.push(msg);
+                    initialErrorListForVisualDisplay.push(msg);
+                    const logEntry = {
+                        entidade: `Gleba-${g.glebaIndex}`,
+                        tipo_evento: 'validacao',
+                        severidade: 'error',
+                        codigo: 'GEOM_DUPLICATE_POINTS',
+                        mensagem: `Pontos duplicados consecutivos detectados no anel externo.`,
+                        detalhes: { duplicados: duplicatedPoints }
+                    };
+                    relatorio.eventos.push(logEntry);
+                    if (isInitialValidation) initialErrors.push(logEntry);
+                    // Sinaliza para o sistema de correção sugerir remoção automática
+                    if (!glebasToFixCrossings.some(gs => gs.glebaIndex === g.glebaIndex)) {
+                        glebasToFixCrossings.push({ glebaIndex: g.glebaIndex, duplicatedPoints });
+                    }
+                }
         
         // Verifica se anel externo tem < 3 pontos (não renderizável)
-        const outerRingPoints = (subglebaGroups['00'] || []).filter(p => p !== undefined);
         if (outerRingPoints.length < 3 && !glebasInvalidRing.includes(g.glebaIndex)) {
             glebasInvalidRing.push(g.glebaIndex);
             const msg = `AVISO Gleba ${g.glebaIndex}: Anel externo com apenas ${outerRingPoints.length} ponto(s). Mínimo 3 requerido para renderizar.`;
@@ -9603,18 +10064,78 @@ document.getElementById('apply-correction-btn').addEventListener('click', async 
             if (modified > 0) correctionsApplied = true;
         } 
 
-        // 4. Correção de Cruzamentos
+        // 4. Correção de Cruzamentos e Pontos Duplicados
         if (glebasToFixCrossings && glebasToFixCrossings.length > 0) {
             const selectedCrossIndexes = [];
+            const selectedDupIndexes = [];
             for (let k = 0; k < glebasToFixCrossings.length; k++) {
-                const checkbox = document.getElementById(`fix-cross-${k}`);
-                if (checkbox && checkbox.checked) selectedCrossIndexes.push(k);
+                // Se for cruzamento (tem intr/ringIdx)
+                const entry = glebasToFixCrossings[k];
+                if (entry && entry.intr && typeof entry.ringIdx !== 'undefined') {
+                    const checkbox = document.getElementById(`fix-cross-${k}`);
+                    if (checkbox && checkbox.checked) selectedCrossIndexes.push(k);
+                } else if (entry && entry.duplicatedPoints && Array.isArray(entry.duplicatedPoints)) {
+                    const checkbox = document.getElementById(`fix-dup-${k}`);
+                    if (checkbox && checkbox.checked) selectedDupIndexes.push(k);
+                }
             }
             if (selectedCrossIndexes.length > 0) {
                 const fixed = applyCrossingCorrection(selectedCrossIndexes);
                 if (fixed > 0) correctionsApplied = true;
             }
+            if (selectedDupIndexes.length > 0) {
+                const fixedDup = applyDuplicatedPointsCorrection(selectedDupIndexes);
+                if (fixedDup > 0) correctionsApplied = true;
+            }
         }
+            /**
+             * Remove pontos duplicados consecutivos do anel externo das glebas marcadas.
+             * @param {Array} selectedDupIndexes - Índices em glebasToFixCrossings para corrigir.
+             * @returns {number} Quantidade de glebas corrigidas.
+             */
+            function applyDuplicatedPointsCorrection(selectedDupIndexes) {
+                if (!Array.isArray(selectedDupIndexes) || selectedDupIndexes.length === 0) return 0;
+                let corrected = 0;
+                selectedDupIndexes.forEach(idx => {
+                    const entry = glebasToFixCrossings[idx];
+                    if (!entry || !entry.duplicatedPoints || !Array.isArray(entry.duplicatedPoints)) return;
+                    const gleba = glebaData.find(g => g.glebaIndex === entry.glebaIndex);
+                    if (!gleba) return;
+                    // Corrige apenas o anel externo (subglebaIndex '00')
+                    let points = gleba.points;
+                    let changed = false;
+                    // Remove duplicados consecutivos do anel externo
+                    for (let i = points.length - 1; i > 0; i--) {
+                        const pCurr = points[i];
+                        const pPrev = points[i - 1];
+                        if ((pCurr.subglebaIndex || '00') === '00' && (pPrev.subglebaIndex || '00') === '00') {
+                            if (almostEqual(pCurr.lat, pPrev.lat) && almostEqual(pCurr.lon, pPrev.lon)) {
+                                points.splice(i, 1);
+                                changed = true;
+                            }
+                        }
+                    }
+                    if (changed) {
+                        gleba.points = points;
+                        reindexGlebaPoints(gleba);
+                        corrected++;
+                        // Adiciona detalhes legíveis para o PDF
+                        const indicesDuplicados = (entry.duplicatedPoints || []).map(d => d.idx);
+                        logEvento(
+                            `Gleba-${gleba.glebaIndex}`,
+                            'correcao',
+                            'info',
+                            'FIX_DUPLICATED_POINTS',
+                            `Pontos duplicados consecutivos removidos automaticamente.`,
+                            { indicesDuplicados },
+                        );
+                    }
+                });
+                // Redesenha e revalida
+                drawGlebasFromData(glebaData, true);
+                validateAll();
+                return corrected;
+            }
         
         // 5. Simplificação (>99 pontos)
         if (glebasToSimplify.length > 0) {
@@ -10262,28 +10783,7 @@ document.addEventListener('click', (e) => {
     discardCandidateCar(carCode);
 });
   </script>
-<footerclass="max-w-[1200px] mx-auto px-4 py-12 mt-8 border-t border-gray-200">
-  <div class="flex flex-col md:flex-row items-center gap-4">
 
-    <!-- Lado Esquerdo -->
-    <div class="flex items-center flex-1 justify-center md:justify-start">
-      <span class="brde-logo-green text-xl">BRDE</span>
-      <div class="vertical-divider"></div>
-      <span class="footer-text-shared">
-        Sistema de Validação Geoespacial e Análise Ambiental
-      </span>
-    </div>
-
-    <!-- Lado Direito -->
-    <div class="flex-1 text-center md:text-right footer-text-shared">
-        <div style="max-width: 480px; margin-left: auto;">
-      <p> </p>
-    </div>
-    </div>
-
-  </div>
-</footer>
 </body>
 </html>
-
 
