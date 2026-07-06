@@ -1,0 +1,1294 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GeoValida - Análise da Carteira</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <!-- Turf.js para operações geoespaciais avançadas -->
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+    <!-- Chart.js para gráficos tipo Power BI -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        /* Log terminal styling */
+        .terminal-log {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #0f172a;
+            color: #38bdf8;
+        }
+    </style>
+</head>
+<body class="h-screen overflow-hidden flex flex-col">
+
+   <!-- NOVO CABEÇALHO (Mais fino, fontes menores, estilo Enterprise) -->
+<header class="bg-[#006837] text-white shadow-md z-50 shrink-0">
+    <div class="w-full mx-auto px-4 py-2 flex justify-between items-center">
+        
+        <!-- LADO ESQUERDO: Home + Menu + Logo -->
+        <div class="flex items-center gap-3">
+            <!-- Botão Home -->
+            <a href="home.html" title="Página Inicial" class="flex items-center justify-center p-1.5 rounded bg-[#005d3b] hover:bg-[#004b23] transition-colors border border-[#004b23]">
+                <i class="ph-bold ph-house text-lg"></i>
+            </a>
+            
+            <!-- Botão Menu Hambúrguer -->
+            <button onclick="toggleMainMenu()" title="Abrir/Fechar Menu" class="flex items-center justify-center p-1.5 rounded bg-[#005d3b] hover:bg-[#004b23] transition-colors border border-[#004b23]">
+                <i class="ph-bold ph-list text-lg"></i>
+            </button>
+
+            <!-- Título do Sistema -->
+            <div class="ml-2 flex flex-col justify-center">
+                <div class="flex items-center gap-2">
+                    <h1 class="font-bold text-lg leading-none tracking-tight">GeoValida</h1>
+                </div>
+                <p class="text-[9px] text-emerald-100/80 uppercase tracking-widest font-semibold mt-0.5">Sistema de Validação Geoespacial e Análise Ambiental</p>
+            </div>
+        </div>
+
+        <!-- LADO DIREITO: Botão Nova Análise -->
+        <button onclick="window.location.reload()" class="bg-[#004b23] hover:bg-[#00361a] transition-colors px-3 py-1.5 rounded text-xs font-semibold flex items-center gap-2 shadow-inner">
+            <i class="ph-bold ph-map-pin-fill"></i> <span class="hidden md:inline">Nova Análise</span>
+        </button>
+    </div>
+</header>
+    <!-- MAIN CONTAINER (SIDEBAR + CONTENT) -->
+    <div class="flex flex-1 overflow-hidden">
+        
+        <!-- SIDEBAR DE NAVEGAÇÃO GLOBAL -->
+        <aside class="w-64 bg-slate-900 text-slate-300 flex flex-col justify-between shadow-xl z-20 shrink-0">
+            <div>
+                <!-- Menu de Operações -->
+             <nav class="p-2 space-y-1">
+                    <button id="btn-geovalida" onclick="window.location.href='index.html'" class="w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-all bg-emerald-600 text-white shadow-md cursor-default">
+                        <i class="ph-bold ph-map-trifold text-lg"></i>
+                        <span>Validação Geográfica</span>
+                    </button>
+                    
+                    <button id="btn-dashboard" onclick="switchTab('dashboard')" class="w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-all hover:bg-slate-800 text-slate-400 hover:text-slate-100">
+                        <i data-lucide="pie-chart"></i>
+                        <span>Análise da Carteira</span>
+                    </button>
+                </nav>
+              
+                <div class="px-4 py-4 border-b border-slate-800 mt-4">
+                    <p class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Monitoramento API</p>
+                </div>
+                <div class="p-3">
+                    <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-xs">
+                        <div class="flex items-center justify-between mb-1.5">
+                            <span class="text-[10px] font-semibold text-emerald-400">STATUS DA INTEGRACAO</span>
+                            <span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        </div>
+                        <p class="text-slate-400 text-[10px] font-mono">Host: api-corporativa.brb</p>
+                        <p class="text-slate-400 text-[10px] font-mono mt-0.5">Geo-Engine: NetTopologySuite 8.0</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer Sidebar -->
+            <div class="p-4 border-t border-slate-800 text-[11px] text-slate-500">
+                <p>GeoValida</p>
+                <p class="mt-0.5">© 2026 GeoValida</p>
+            </div>
+        </aside>
+
+        <!-- CONTAINER PRINCIPAL DO CONTEÚDO -->
+        <main class="flex-1 flex flex-col overflow-hidden bg-slate-50">
+
+            <!-- ================= PAGE 1: GEOVALIDA (ANÁLISE INDIVIDUAL DE CONTRATO) ================= -->
+            <div id="tab-geovalida-content" class="flex-1 flex flex-col md:flex-row overflow-hidden">
+                
+                <!-- PAINEL DE CONTROLE DA ANÁLISE GEOGRÁFICA -->
+                <section class="w-full md:w-[380px] bg-white border-r border-slate-200 flex flex-col justify-between overflow-y-auto shrink-0 z-10 shadow-sm">
+                    <div class="p-5">
+                        <div class="flex items-center gap-2 mb-4">
+                            <i data-lucide="search" class="text-[#005d3b] w-5 h-5"></i>
+                            <h2 class="text-base font-bold text-slate-800">Buscar Contrato</h2>
+                        </div>
+                        
+                        <!-- Formulário de Consulta -->
+                        <div class="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1">AGÊNCIA</label>
+                                <input id="input-agencia" type="text" class="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none" value="01" placeholder="Ex: 01">
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-600 mb-1">Nº CONTRATO</label>
+                                    <input id="input-contrato" type="text" class="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none" value="70120" placeholder="Ex: 70120">
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-600 mb-1">Nº ADITIVO</label>
+                                    <input id="input-aditivo" type="text" class="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none" value="0">
+                                </div>
+                            </div>
+                            
+                            <button onclick="executarAnaliseGeoValida()" class="w-full bg-[#005d3b] hover:bg-emerald-800 text-white py-2 px-4 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 shadow transition-all mt-2">
+                                <i data-lucide="play" class="w-4 h-4"></i>
+                                <span>Analisar Contrato</span>
+                            </button>
+                        </div>
+
+                        <!-- Detalhes do Contrato Carregado -->
+                        <div id="dados-contrato" class="mt-5 hidden">
+                            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Dados do Produtor</h3>
+                            <div class="bg-slate-50 border border-slate-100 rounded-xl p-4 space-y-2 text-xs">
+                                <p class="text-slate-500">Cliente: <strong id="det-cliente" class="text-slate-800"></strong></p>
+                                <p class="text-slate-500">CPF/CNPJ: <strong id="det-cpfcnpj" class="text-slate-800"></strong></p>
+                                <p class="text-slate-500">Linha: <strong id="det-linha" class="text-slate-800"></strong></p>
+                                <p class="text-slate-500">Montante: <strong id="det-valor" class="text-emerald-700 font-semibold"></strong></p>
+                                <div class="flex items-center gap-1.5 pt-1.5 border-t border-slate-200">
+                                    <span>Status Ambiental:</span>
+                                    <span id="det-status-badge" class="px-2 py-0.5 rounded-full font-bold text-[10px]"></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Resultados de Cruzamento Espacial (Turf.js em Tempo Real) -->
+                        <div id="resultado-geoespacial" class="mt-5 hidden">
+                            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Análise de Sobreposição (Turf.js)</h3>
+                            <div class="space-y-3">
+                                <!-- Gleba Info Card -->
+                                <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-xs flex justify-between items-center">
+                                    <div>
+                                        <p class="font-bold text-emerald-950">Gleba Processada #1</p>
+                                        <p class="text-emerald-800" id="gleba-area-ha"></p>
+                                    </div>
+                                    <span class="bg-emerald-600 text-white font-mono px-2 py-1 rounded text-[11px]" id="gleba-pontos-totais"></span>
+                                </div>
+
+                                <!-- Alert Cards -->
+                                <div class="space-y-2">
+                                    <!-- CAR Check -->
+                                    <div class="border rounded-xl p-3 text-xs bg-slate-50 border-slate-200" id="card-check-car">
+                                        <div class="flex items-center justify-between">
+                                            <span class="font-bold flex items-center gap-1.5"><i data-lucide="shield-alert" class="w-4 h-4 text-emerald-600" id="icon-car"></i> Cadastro Ambiental (CAR)</span>
+                                            <span class="font-bold text-emerald-600" id="overlap-car-pct">0%</span>
+                                        </div>
+                                        <p class="text-slate-500 text-[11px] mt-1" id="text-car">Totalmente regular e alinhado.</p>
+                                    </div>
+
+                                    <!-- UC Check -->
+                                    <div class="border rounded-xl p-3 text-xs bg-slate-50 border-slate-200" id="card-check-uc">
+                                        <div class="flex items-center justify-between">
+                                            <span class="font-bold flex items-center gap-1.5"><i data-lucide="trees" class="w-4 h-4 text-emerald-600" id="icon-uc"></i> Reservas Ambientais (UC)</span>
+                                            <span class="font-bold text-emerald-600" id="overlap-uc-pct">0%</span>
+                                        </div>
+                                        <p class="text-slate-500 text-[11px] mt-1" id="text-uc">Nenhuma intersecção detectada.</p>
+                                    </div>
+
+                                    <!-- TI Check -->
+                                    <div class="border rounded-xl p-3 text-xs bg-slate-50 border-slate-200" id="card-check-ti">
+                                        <div class="flex items-center justify-between">
+                                            <span class="font-bold flex items-center gap-1.5"><i data-lucide="user-check" class="w-4 h-4 text-emerald-600" id="icon-ti"></i> Terras Indígenas (TI)</span>
+                                            <span class="font-bold text-emerald-600" id="overlap-ti-pct">0%</span>
+                                        </div>
+                                        <p class="text-slate-500 text-[11px] mt-1" id="text-ti">Nenhum conflito de posse indigena encontrado.</p>
+                                    </div>
+                                </div>
+
+                                <!-- Laudo Button -->
+                                <button onclick="mostrarLaudo()" class="w-full border-2 border-emerald-600 text-emerald-700 hover:bg-emerald-50 py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-2 transition-all mt-4">
+                                    <i data-lucide="file-text"></i>
+                                    <span>Visualizar Laudo Técnico (PDF)</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Rodapé do controle: terminal de requisições  -->
+                    <div class="p-4 border-t border-slate-200 bg-slate-900 text-slate-100">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-[10px] font-bold uppercase text-slate-400">Terminal Log Integrado</span>
+                            <span class="text-[9px] bg-emerald-950 text-emerald-400 px-1.5 rounded border border-emerald-800">STREAMING</span>
+                        </div>
+                        <div id="api-logs" class="h-28 overflow-y-auto text-[10px] font-mono p-1 bg-slate-950 rounded border border-slate-800 space-y-1">
+                            <span class="text-slate-500">Aguardando comando de análise...</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- MAPA DA ANALISE -->
+                <div class="flex-1 relative flex flex-col">
+                    <div id="mapa-valida" class="w-full flex-1 z-0"></div>
+                    <div class="absolute top-4 right-4 bg-white px-3 py-2 rounded-lg shadow-md z-[1000] border border-slate-200 text-xs">
+                        <p class="font-bold text-slate-700 mb-1.5">Legenda Ambiental</p>
+                        <div class="space-y-1">
+                            <div class="flex items-center gap-2"><span class="w-3.5 h-3.5 bg-emerald-500 bg-opacity-30 border border-emerald-600 inline-block rounded"></span> <span>Gleba Reconstruída</span></div>
+                            <div class="flex items-center gap-2"><span class="w-3.5 h-3.5 bg-yellow-500 bg-opacity-30 border border-yellow-600 inline-block rounded"></span> <span>CAR (Limites do Imóvel)</span></div>
+                            <div class="flex items-center gap-2"><span class="w-3.5 h-3.5 bg-teal-600 bg-opacity-40 border border-teal-800 inline-block rounded"></span> <span>Unidades de Conservação</span></div>
+                            <div class="flex items-center gap-2"><span class="w-3.5 h-3.5 bg-purple-600 bg-opacity-40 border border-purple-800 inline-block rounded"></span> <span>Terras Indígenas (FUNAI)</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ================= PAGE 2: VALIDAÇÃO DA CARTEIRA COMPLETA (POWER BI) ================= -->
+            <div id="tab-dashboard-content" class="flex-1 flex flex-col md:flex-row overflow-hidden hidden">
+                
+                <!-- PAINEL DE FILTROS DO DASHBOARD (Estilo Power BI Lateral) -->
+                <section class="w-full md:w-64 bg-slate-100 border-r border-slate-200 p-4 flex flex-col justify-between overflow-y-auto shrink-0">
+                    <div class="space-y-4">
+                        <div class="flex items-center gap-2 pb-3 border-b border-slate-200">
+                            <i data-lucide="sliders" class="text-emerald-700 w-5 h-5"></i>
+                            <h2 class="text-sm font-bold text-slate-800">Filtros do Painel</h2>
+                        </div>
+
+                        <!-- Filtro de Situação -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 mb-1.5">Situação Ambiental</label>
+                            <select id="filter-status" onchange="aplicarFiltrosDashboard()" class="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500">
+                                <option value="TODOS">Todos os Contratos</option>
+                                <option value="Regular">Sem Alertas (Regulares)</option>
+                                <option value="Alerta">Atenção (Com Alertas)</option>
+                                <option value="Bloqueado">Bloqueados (Não Emissíveis)</option>
+                            </select>
+                        </div>
+
+                        <!-- Filtro de Escala de Risco -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 mb-1.5">Risco de Conformidade</label>
+                            <select id="filter-risco" onchange="aplicarFiltrosDashboard()" class="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500">
+                                <option value="TODOS">Todos os Níveis</option>
+                                <option value="Baixo">Baixo (0% - 5%)</option>
+                                <option value="Medio">Médio (5% - 20%)</option>
+                                <option value="Alto">Alto (> 20%)</option>
+                            </select>
+                        </div>
+
+                        <!-- Filtro Regional -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 mb-1.5">Regional / Estado</label>
+                            <div class="space-y-1.5 bg-white p-2.5 rounded-lg border border-slate-200">
+                                <label class="flex items-center gap-2 text-xs text-slate-700">
+                                    <input type="checkbox" checked class="rounded text-emerald-600" name="chk-estado" value="PR" onchange="aplicarFiltrosDashboard()"> Paraná (PR)
+                                </label>
+                                <label class="flex items-center gap-2 text-xs text-slate-700">
+                                    <input type="checkbox" checked class="rounded text-emerald-600" name="chk-estado" value="SC" onchange="aplicarFiltrosDashboard()"> Santa Catarina (SC)
+                                </label>
+                                <label class="flex items-center gap-2 text-xs text-slate-700">
+                                    <input type="checkbox" checked class="rounded text-emerald-600" name="chk-estado" value="RS" onchange="aplicarFiltrosDashboard()"> Rio Grande do Sul (RS)
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Info de Integração -->
+                        <div class="bg-emerald-50 border border-emerald-100 p-3 rounded-lg text-xs">
+                            <p class="text-emerald-800 font-semibold mb-0.5">Base Sicar Atualizada</p>
+                            <p class="text-emerald-700 text-[10px]">Última sincronia espacial realizada hoje.</p>
+                        </div>
+                    </div>
+
+                    <!-- Resetar Filtros -->
+                    <button onclick="resetarFiltrosDashboard()" class="w-full text-center text-xs text-[#005d3b] font-bold hover:underline py-2">
+                        Limpar todos os filtros
+                    </button>
+                </section>
+
+                <!-- CONTEÚDO DOS GRÁFICOS DO POWER BI -->
+                <div class="flex-1 p-5 overflow-y-auto space-y-4">
+                    
+                    <!-- KPI CARDS (Ribbon Superior) -->
+                    <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 shrink-0">
+                        <!-- Card 1 -->
+                        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden flex flex-col justify-between">
+                            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Volume Analisado</span>
+                            <p class="text-xl font-extrabold text-slate-800 mt-1" id="kpi-total-carteira">R$ 52,4 M</p>
+                            <span class="text-[10px] text-emerald-600 font-semibold mt-1 flex items-center gap-0.5"><i data-lucide="trending-up" class="w-3 h-3"></i> +12% vs. anterior</span>
+                        </div>
+                        <!-- Card 2 -->
+                        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden flex flex-col justify-between">
+                            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Área Sob Inspeção</span>
+                            <p class="text-xl font-extrabold text-slate-800 mt-1" id="kpi-area-inspeccionada">34.820 ha</p>
+                            <span class="text-[10px] text-slate-400 mt-1">Glebas de crédito</span>
+                        </div>
+                        <!-- Card 3 -->
+                        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden flex flex-col justify-between border-l-4 border-l-emerald-500">
+                            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Conformidade Verde</span>
+                            <p class="text-xl font-extrabold text-emerald-700 mt-1" id="kpi-regular-pct">82,4%</p>
+                            <span class="text-[10px] text-emerald-600 mt-1">Conformidade total</span>
+                        </div>
+                        <!-- Card 4 -->
+                        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden flex flex-col justify-between border-l-4 border-l-yellow-500">
+                            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Contratos em Alerta</span>
+                            <p class="text-xl font-extrabold text-yellow-600 mt-1" id="kpi-alerta-count">11</p>
+                            <span class="text-[10px] text-slate-400 mt-1">Necessitam análise manual</span>
+                        </div>
+                        <!-- Card 5 -->
+                        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden flex flex-col justify-between border-l-4 border-l-rose-500">
+                            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Bloqueados</span>
+                            <p class="text-xl font-extrabold text-rose-600 mt-1" id="kpi-bloqueado-count">3</p>
+                            <span class="text-[10px] text-rose-500 font-semibold mt-1">Infração grave detectada</span>
+                        </div>
+                    </div>
+
+                    <!-- PAINEL CENTRAL DE GRÁFICOS E MAPA -->
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                        
+                        <!-- Coluna Esquerda: Gráficos -->
+                        <div class="lg:col-span-4 space-y-4">
+                            <!-- Gráfico 1: Tipo de Alertas -->
+                            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                                <h3 class="text-xs font-bold text-slate-700 mb-3 uppercase tracking-wider">Incidência de Alertas por Categoria</h3>
+                                <div class="h-44 relative">
+                                    <canvas id="chart-alertas"></canvas>
+                                </div>
+                            </div>
+                            <!-- Gráfico 2: Situação por Regional -->
+                            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                                <h3 class="text-xs font-bold text-slate-700 mb-3 uppercase tracking-wider">Distribuição por Status (%)</h3>
+                                <div class="h-44 relative">
+                                    <canvas id="chart-situacao-donut"></canvas>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Coluna Direita: Mapa Integrado de Centróides -->
+                        <div class="lg:col-span-8 flex flex-col min-h-[400px] bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                            <div class="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                                <span class="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5"><i data-lucide="map-pin" class="w-4 h-4 text-[#005d3b]"></i> Geolocalização da Carteira de Crédito</span>
+                                <span class="text-[10px] text-slate-500">Clique em qualquer ponto para destacar o contrato</span>
+                            </div>
+                            <div class="flex-1 relative">
+                                <div id="mapa-dashboard" class="w-full h-full min-h-[350px]"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TABELA DE CONTRATOS DO DASHBOARD (Integração direta com o GeoValida) -->
+                    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden shrink-0">
+                        <div class="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                            <h3 class="text-xs font-bold text-slate-700 uppercase tracking-wider">Lista Integrada de Contratos da Carteira</h3>
+                            <span class="text-[10px] bg-slate-200 text-slate-700 px-2.5 py-0.5 rounded-full font-semibold" id="table-row-count">Exibindo 5 contratos</span>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-xs border-collapse">
+                                <thead>
+                                    <tr class="border-b border-slate-200 bg-slate-100 text-slate-600 font-semibold uppercase text-[10px]">
+                                        <th class="py-2.5 px-4">Contrato</th>
+                                        <th class="py-2.5 px-4">Cliente / Produtor</th>
+                                        <th class="py-2.5 px-4">Agência / Local</th>
+                                        <th class="py-2.5 px-4 text-right">Área (ha)</th>
+                                        <th class="py-2.5 px-4 text-center">Status Ambiental</th>
+                                        <th class="py-2.5 px-4 text-center">Risco CAR</th>
+                                        <th class="py-2.5 px-4 text-center">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tabela-contratos-body" class="divide-y divide-slate-100">
+                                    <!-- Dinâmico -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- MODAL DE LAUDO AMBIENTAL (PDF) -->
+    <div id="modal-laudo" class="fixed inset-0 bg-slate-900 bg-opacity-70 z-[9999] flex items-center justify-center hidden p-4">
+        <div class="bg-white w-full max-w-3xl rounded-xl shadow-2xl flex flex-col max-h-[90vh]">
+            <!-- Header -->
+            <div class="px-6 py-4 bg-[#005d3b] text-white flex justify-between items-center rounded-t-xl shrink-0">
+                <div>
+                    <h3 class="font-bold text-base flex items-center gap-2"><i data-lucide="award"></i> Certificado de Validação Geodecológica</h3>
+                    <p class="text-xs text-emerald-200">Emitido automaticamente pelo módulo de inteligência ambiental</p>
+                </div>
+                <button onclick="fecharLaudo()" class="text-white hover:text-slate-200 font-bold">&times;</button>
+            </div>
+            <!-- Body -->
+            <div class="p-8 overflow-y-auto space-y-6 text-sm" id="laudo-print-area">
+                <div class="flex justify-between items-start border-b pb-4">
+                    <div>
+                        <p class="font-bold text-slate-800 text-lg"> Relatório Ambiental Unificado</p>
+                        <p class="text-xs text-slate-500">ID da Certificação: <span class="font-mono text-slate-700" id="laudo-id-certificado"></span></p>
+                    </div>
+                    <div class="bg-slate-100 text-slate-700 text-xs px-3 py-1.5 rounded font-mono font-bold text-center">
+                        <p>DATA DE ANÁLISE</p>
+                        <p id="laudo-data"></p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border text-xs">
+                    <div>
+                        <p class="text-slate-400 font-semibold uppercase text-[10px]">INFORMAÇÕES DO CRÉDITO</p>
+                        <p class="text-slate-800 font-bold mt-1" id="laudo-cliente"></p>
+                        <p class="text-slate-600 mt-0.5">Contrato: <span id="laudo-contrato"></span> | Agência: <span id="laudo-agencia"></span></p>
+                        <p class="text-slate-600 mt-0.5">Operação: <span id="laudo-linha"></span></p>
+                    </div>
+                    <div>
+                        <p class="text-slate-400 font-semibold uppercase text-[10px]">METADADOS GEOGRÁFICOS</p>
+                        <p class="text-slate-800 font-bold mt-1" id="laudo-area-ha"></p>
+                        <p class="text-slate-600 mt-0.5">Algoritmo: Polígono Fechado (RFC 7946)</p>
+                        <p class="text-slate-600 mt-0.5">Sistema: NetTopologySuite 8.0 .NET API</p>
+                    </div>
+                </div>
+
+                <div class="space-y-3">
+                    <h4 class="font-bold text-slate-800 border-b pb-1">Resultado de Sobreposições e Restrições</h4>
+                    <table class="w-full text-xs text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-100 text-slate-600 uppercase font-bold text-[9px] border-b">
+                                <th class="p-2">Regra Restritiva / Camada</th>
+                                <th class="p-2 text-center">Área Conflito</th>
+                                <th class="p-2 text-center">Percentual (%)</th>
+                                <th class="p-2 text-right">Resultado Geral</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y text-slate-700">
+                            <tr>
+                                <td class="p-2 font-semibold">Glebas Sobreposta com CAR Registrado</td>
+                                <td class="p-2 text-center font-mono" id="laudo-car-ha">0,00 ha</td>
+                                <td class="p-2 text-center font-mono font-semibold" id="laudo-car-pct">0%</td>
+                                <td class="p-2 text-right font-bold text-emerald-700" id="laudo-car-status">COMPATÍVEL</td>
+                            </tr>
+                            <tr>
+                                <td class="p-2 font-semibold">Áreas de Unidade de Conservação (UC)</td>
+                                <td class="p-2 text-center font-mono" id="laudo-uc-ha">0,00 ha</td>
+                                <td class="p-2 text-center font-mono font-semibold" id="laudo-uc-pct">0%</td>
+                                <td class="p-2 text-right font-bold text-emerald-700" id="laudo-uc-status">COMPATÍVEL</td>
+                            </tr>
+                            <tr>
+                                <td class="p-2 font-semibold">Terras Indígenas demarcadas (TI)</td>
+                                <td class="p-2 text-center font-mono" id="laudo-ti-ha">0,00 ha</td>
+                                <td class="p-2 text-center font-mono font-semibold" id="laudo-ti-pct">0%</td>
+                                <td class="p-2 text-right font-bold text-emerald-700" id="laudo-ti-status">COMPATÍVEL</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="p-4 rounded-xl text-xs space-y-1.5" id="laudo-parecer-container">
+                    <p class="font-bold" id="laudo-parecer-titulo">PARECER TÉCNICO DE CONFORMIDADE</p>
+                    <p id="laudo-parecer-texto"></p>
+                </div>
+
+                <div class="flex justify-between items-center text-[10px] text-slate-400 pt-8 border-t">
+                    <p>Módulo GeoValida - Integração Automática de Base SIGA</p>
+                    <p class="font-mono" id="laudo-checksum"></p>
+                </div>
+            </div>
+            <!-- Footer Buttons -->
+            <div class="px-6 py-4 bg-slate-100 rounded-b-xl flex justify-end gap-3 shrink-0">
+                <button onclick="fecharLaudo()" class="px-4 py-2 bg-slate-300 hover:bg-slate-400 text-slate-800 rounded-lg text-xs font-semibold">
+                    Fechar
+                </button>
+                <button onclick="imprimirLaudo()" class="px-4 py-2 bg-[#005d3b] hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow">
+                    <i data-lucide="printer" class="w-3.5 h-3.5"></i> Imprimir Laudo
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCRIPTS DE SIMULAÇÃO E GEOPROCESSAMENTO -->
+    <script>
+        // Inicialização de Ícones
+        lucide.createIcons();
+
+        // Variáveis de Controle Globais
+        let mapValida = null;
+        let mapDashboard = null;
+        let activeLayerGroup = null;
+        let dashboardMarkersGroup = null;
+        let chartAlertas = null;
+        let chartSituacao = null;
+
+        // Base de Contratos Simulados (Mock de dados que seriam buscados nas APIs REST do .NET)
+        const CONTRATOS_MOCK = [
+            {
+                contrato: "70120",
+                agencia: "01",
+                cliente: "Agropecuária Rio Corrente Ltda",
+                cpfcnpj: "12.345.678/0001-90",
+                linha: "Pronamp Custeio Agrícola",
+                valor: 1450000.00,
+                statusAmbiental: "Regular",
+                riscoCAR: "Baixo",
+                estado: "PR",
+                municipio: "Campo Mourão",
+                areaHectares: 245.8,
+                // Coordenadas das glebas do contrato
+                coordenadasGleba: [
+                    [-52.385, -24.040],
+                    [-52.370, -24.041],
+                    [-52.372, -24.050],
+                    [-52.388, -24.048]
+                ],
+                // Elementos de sobreposição (CAR, UC, TI) calculados via Turf.js na execução
+                carPolygon: [
+                    [-52.386, -24.039],
+                    [-52.368, -24.040],
+                    [-52.370, -24.052],
+                    [-52.389, -24.050]
+                ],
+                ucPolygon: null,
+                tiPolygon: null
+            },
+            {
+                contrato: "85220",
+                agencia: "03",
+                cliente: "João da Silva Sauro",
+                cpfcnpj: "987.654.321-00",
+                linha: "BNDES Automático",
+                valor: 890000.00,
+                statusAmbiental: "Alerta",
+                riscoCAR: "Medio",
+                estado: "SC",
+                municipio: "Chapecó",
+                areaHectares: 112.5,
+                coordenadasGleba: [
+                    [-52.610, -27.100],
+                    [-52.625, -27.112],
+                    [-52.630, -27.100],
+                    [-52.615, -27.090]
+                ],
+                carPolygon: [
+                    [-52.612, -27.102],
+                    [-52.626, -27.113],
+                    [-52.628, -27.098]
+                ],
+                // Sobreposição parcial simulada com Unidade de Conservação
+                ucPolygon: [
+                    [-52.620, -27.095],
+                    [-52.610, -27.095],
+                    [-52.610, -27.105],
+                    [-52.620, -27.105]
+                ],
+                tiPolygon: null
+            },
+            {
+                contrato: "99310",
+                agencia: "07",
+                cliente: "Fazenda Pinheiros S/A",
+                cpfcnpj: "44.555.666/0001-22",
+                linha: "FCO Rural",
+                valor: 2310000.00,
+                statusAmbiental: "Bloqueado",
+                riscoCAR: "Alto",
+                estado: "PR",
+                municipio: "Guarapuava",
+                areaHectares: 340.2,
+                coordenadasGleba: [
+                    [-51.465, -25.395],
+                    [-51.450, -25.398],
+                    [-51.452, -25.412],
+                    [-51.470, -25.408]
+                ],
+                carPolygon: [
+                    [-51.464, -25.394],
+                    [-51.448, -25.397],
+                    [-51.450, -25.414],
+                    [-51.472, -25.410]
+                ],
+                // Alta sobreposição de Terra Indígena
+                ucPolygon: null,
+                tiPolygon: [
+                    [-51.460, -25.400],
+                    [-51.440, -25.400],
+                    [-51.440, -25.420],
+                    [-51.460, -25.420]
+                ]
+            },
+            {
+                contrato: "44120",
+                agencia: "01",
+                cliente: "Sítio Primavera Agro",
+                cpfcnpj: "55.666.777/0001-88",
+                linha: "Inovagro",
+                valor: 450000.00,
+                statusAmbiental: "Regular",
+                riscoCAR: "Baixo",
+                estado: "PR",
+                municipio: "Maringá",
+                areaHectares: 85.0,
+                coordenadasGleba: [
+                    [-51.935, -23.415],
+                    [-51.920, -23.418],
+                    [-51.922, -23.430],
+                    [-51.938, -23.426]
+                ],
+                carPolygon: [
+                    [-51.934, -23.414],
+                    [-51.918, -23.417],
+                    [-51.920, -23.432]
+                ],
+                ucPolygon: null,
+                tiPolygon: null
+            },
+            {
+                contrato: "55230",
+                agencia: "02",
+                cliente: "Recanto Verde ME",
+                cpfcnpj: "22.333.444/0001-11",
+                linha: "Pronaf Custeio",
+                valor: 195000.00,
+                statusAmbiental: "Regular",
+                riscoCAR: "Baixo",
+                estado: "RS",
+                municipio: "Erechim",
+                areaHectares: 54.3,
+                coordenadasGleba: [
+                    [-52.278, -27.635],
+                    [-52.260, -27.638],
+                    [-52.262, -27.648],
+                    [-52.280, -27.645]
+                ],
+                carPolygon: [
+                    [-52.277, -27.634],
+                    [-52.258, -27.637]
+                ],
+                ucPolygon: null,
+                tiPolygon: null
+            }
+        ];
+
+        // Dicionário temporário dos resultados de análise calculados
+        let analiseCalculadaAtiva = {};
+
+        // Inicializador OnLoad
+        window.onload = function() {
+            // Inicializar Mapa do GeoValida
+            mapValida = L.map('mapa-valida').setView([-24.8, -52.0], 7);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap'
+            }).addTo(mapValida);
+
+            activeLayerGroup = L.layerGroup().addTo(mapValida);
+
+            // Inicializar Mapa do Dashboard da Carteira
+            mapDashboard = L.map('mapa-dashboard').setView([-25.3, -52.5], 7);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap'
+            }).addTo(mapDashboard);
+
+            dashboardMarkersGroup = L.layerGroup().addTo(mapDashboard);
+
+            // Setup de Gráficos e Dados
+            construirGraficosDashboard();
+            atualizarDashboard();
+        };
+
+        // Troca de Abas
+        function switchTab(tab) {
+            const btnGeovalida = document.getElementById('btn-geovalida');
+            const btnDashboard = document.getElementById('btn-dashboard');
+            const contentGeovalida = document.getElementById('tab-geovalida-content');
+            const contentDashboard = document.getElementById('tab-dashboard-content');
+
+            if (tab === 'geovalida') {
+                btnGeovalida.className = "w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-all bg-emerald-600 text-white shadow-md";
+                btnDashboard.className = "w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-all hover:bg-slate-800 text-slate-400 hover:text-slate-100";
+                contentGeovalida.classList.remove('hidden');
+                contentDashboard.classList.add('hidden');
+                
+                // Recalcular tamanho do mapa Leaflet para renderizar adequadamente
+                setTimeout(() => mapValida.invalidateSize(), 100);
+            } else {
+                btnDashboard.className = "w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-all bg-emerald-600 text-white shadow-md";
+                btnGeovalida.className = "w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-all hover:bg-slate-800 text-slate-400 hover:text-slate-100";
+                contentDashboard.classList.remove('hidden');
+                contentGeovalida.classList.add('hidden');
+
+                setTimeout(() => {
+                    mapDashboard.invalidateSize();
+                    atualizarDashboard();
+                }, 100);
+            }
+        }
+
+        // ================= FUNÇÕES DO MÓDULO 1: GEOVALIDA (ANÁLISE ESPACIAL) =================
+
+        function logTerminal(message, type = "info") {
+            const logsContainer = document.getElementById('api-logs');
+            const timestamp = new Date().toLocaleTimeString();
+            let colorClass = "text-sky-400";
+            if (type === "success") colorClass = "text-emerald-400";
+            if (type === "warning") colorClass = "text-yellow-400";
+            if (type === "error") colorClass = "text-rose-400";
+
+            const logLine = `<div class="leading-relaxed"><span class="text-slate-500">[${timestamp}]</span> <span class="${colorClass}">${message}</span></div>`;
+            logsContainer.innerHTML += logLine;
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+        }
+
+        function executarAnaliseGeoValida() {
+            const agencia = document.getElementById('input-agencia').value;
+            const contratoNum = document.getElementById('input-contrato').value;
+            const aditivo = document.getElementById('input-aditivo').value;
+
+            const logsContainer = document.getElementById('api-logs');
+            logsContainer.innerHTML = ''; // Limpa logs
+
+            logTerminal(`[REST GET] Solicitando dados ao backend .NET para Contrato: ${contratoNum}, Agência: ${agencia}`, "info");
+
+            // Procura contrato correspondente no mock
+            const contratoLocalizado = CONTRATOS_MOCK.find(c => c.contrato === contratoNum && c.agencia === agencia);
+
+            if (!contratoLocalizado) {
+                logTerminal(`Erro HTTP 404: Contrato ${contratoNum} não encontrado no banco de dados corporativo.`, "error");
+                return;
+            }
+
+            // Simulação de chamadas paginadas assíncronas do backend à API original
+            let currentPage = 1;
+            const totalPages = 3;
+            const countPage = 100;
+
+            function processarProximaPagina() {
+                if (currentPage <= totalPages) {
+                    const isLast = currentPage === totalPages;
+                    const countPoints = isLast ? 34 : countPage;
+                    
+                    logTerminal(`Consumindo coordenadas - Página ${currentPage}/${totalPages} (${countPoints} pontos geodésicos obtidos)`, "info");
+                    
+                    currentPage++;
+                    setTimeout(processarProximaPagina, 600);
+                } else {
+                    logTerminal(`Varredura concluída. 234 pontos geodésicos consolidados.`, "success");
+                    logTerminal(`[NetTopologySuite] Agrupando coordenadas por ID_GLEBA...`, "info");
+                    logTerminal(`[NetTopologySuite] Ordenando pontos espacialmente pelo índice sequencial...`, "info");
+                    logTerminal(`[NetTopologySuite] Verificando fechamento de polígono: LinearRing criado com sucesso.`, "success");
+                    
+                    renderizarAnaliseGeografica(contratoLocalizado);
+                }
+            }
+
+            setTimeout(processarProximaPagina, 300);
+        }
+
+        function renderizarAnaliseGeografica(contrato) {
+            activeLayerGroup.clearLayers();
+
+            // 1. Mostrar dados do contrato
+            document.getElementById('dados-contrato').classList.remove('hidden');
+            document.getElementById('det-cliente').innerText = contrato.cliente;
+            document.getElementById('det-cpfcnpj').innerText = contrato.cpfcnpj;
+            document.getElementById('det-linha').innerText = contrato.linha;
+            document.getElementById('det-valor').innerText = contrato.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+            const badge = document.getElementById('det-status-badge');
+            if (contrato.statusAmbiental === "Regular") {
+                badge.className = "px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-emerald-100 text-emerald-800";
+                badge.innerText = "SEM RESTRIÇÕES";
+            } else if (contrato.statusAmbiental === "Alerta") {
+                badge.className = "px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-yellow-100 text-yellow-800";
+                badge.innerText = "EM ATENÇÃO";
+            } else {
+                badge.className = "px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-rose-100 text-rose-800";
+                badge.innerText = "BLOQUEADO";
+            }
+
+            // 2. Desenhar as Geometrias no Leaflet e calcular cruzamento geoespacial via Turf.js
+            
+            // Reconstrução do Polígono da Gleba
+            // Turf exige coordenadas no formato [longitude, latitude] e o polígono deve ter o primeiro e último ponto idênticos
+            const coordsGleba = [...contrato.coordenadasGleba];
+            if (coordsGleba[0][0] !== coordsGleba[coordsGleba.length - 1][0] || coordsGleba[0][1] !== coordsGleba[coordsGleba.length - 1][1]) {
+                coordsGleba.push(coordsGleba[0]); // Fecha o anel como o backend .NET faz
+            }
+
+            const turfGleba = turf.polygon([coordsGleba]);
+            // Área exata calculada no plano do Turf.js em Hectares
+            const areaM2 = turf.area(turfGleba);
+            const areaHa = areaM2 / 10000;
+
+            // Renderizar Gleba no Mapa
+            // Leaflet inverte para [latitude, longitude]
+            const coordsLeafletGleba = coordsGleba.map(pt => [pt[1], pt[0]]);
+            const glebaPolygon = L.polygon(coordsLeafletGleba, {
+                color: '#005d3b',
+                fillColor: '#10b981',
+                fillOpacity: 0.25,
+                weight: 3
+            }).addTo(activeLayerGroup);
+
+            mapValida.fitBounds(glebaPolygon.getBounds(), { padding: [40, 40] });
+
+            // Simular e desenhar as camadas do SICAR / Meio Ambiente e calcular intersecção real
+            let totalSobreposicaoCar = 0;
+            let totalSobreposicaoUc = 0;
+            let totalSobreposicaoTi = 0;
+
+            // CAR (Sicar)
+            if (contrato.carPolygon) {
+                const coordsCar = [...contrato.carPolygon];
+                if (coordsCar[0][0] !== coordsCar[coordsCar.length - 1][0]) coordsCar.push(coordsCar[0]);
+                
+                const turfCar = turf.polygon([coordsCar]);
+                const carLeafletCoords = coordsCar.map(pt => [pt[1], pt[0]]);
+                
+                L.polygon(carLeafletCoords, {
+                    color: '#d97706',
+                    fillColor: '#f59e0b',
+                    fillOpacity: 0.15,
+                    weight: 1.5,
+                    dashArray: '4, 4'
+                }).addTo(activeLayerGroup);
+
+                // Calcular intersecção real Turf
+                try {
+                    const intersection = turf.intersect(turf.featureCollection([turfGleba, turfCar]));
+                    if (intersection) {
+                        const areaInter = turf.area(intersection);
+                        totalSobreposicaoCar = (areaInter / areaM2) * 100;
+                    }
+                } catch(e) {
+                    totalSobreposicaoCar = 94.2; // Fallback se falha de geometria mock
+                }
+            }
+
+            // Unidade de Conservação
+            if (contrato.ucPolygon) {
+                const coordsUc = [...contrato.ucPolygon];
+                if (coordsUc[0][0] !== coordsUc[coordsUc.length - 1][0]) coordsUc.push(coordsUc[0]);
+                
+                const turfUc = turf.polygon([coordsUc]);
+                const ucLeafletCoords = coordsUc.map(pt => [pt[1], pt[0]]);
+                
+                L.polygon(ucLeafletCoords, {
+                    color: '#0d9488',
+                    fillColor: '#0d9488',
+                    fillOpacity: 0.35,
+                    weight: 2
+                }).addTo(activeLayerGroup);
+
+                try {
+                    const intersection = turf.intersect(turf.featureCollection([turfGleba, turfUc]));
+                    if (intersection) {
+                        const areaInter = turf.area(intersection);
+                        totalSobreposicaoUc = (areaInter / areaM2) * 100;
+                    }
+                } catch(e) {
+                    totalSobreposicaoUc = 12.4;
+                }
+            }
+
+            // Terra Indígena
+            if (contrato.tiPolygon) {
+                const coordsTi = [...contrato.tiPolygon];
+                if (coordsTi[0][0] !== coordsTi[coordsTi.length - 1][0]) coordsTi.push(coordsTi[0]);
+                
+                const turfTi = turf.polygon([coordsTi]);
+                const tiLeafletCoords = coordsTi.map(pt => [pt[1], pt[0]]);
+                
+                L.polygon(tiLeafletCoords, {
+                    color: '#7c3aed',
+                    fillColor: '#7c3aed',
+                    fillOpacity: 0.4,
+                    weight: 2
+                }).addTo(activeLayerGroup);
+
+                try {
+                    const intersection = turf.intersect(turf.featureCollection([turfGleba, turfTi]));
+                    if (intersection) {
+                        const areaInter = turf.area(intersection);
+                        totalSobreposicaoTi = (areaInter / areaM2) * 100;
+                    }
+                } catch(e) {
+                    totalSobreposicaoTi = 34.8;
+                }
+            }
+
+            // Atualizar Painel Espacial lateral com os dados reais calculados pelo Turf.js
+            document.getElementById('resultado-geoespacial').classList.remove('hidden');
+            document.getElementById('gleba-area-ha').innerText = `Área total: ${areaHa.toFixed(2)} hectares`;
+            document.getElementById('gleba-pontos-totais').innerText = `${coordsGleba.length} vértices`;
+
+            // Atualizar cartões de alertas com base nas intersecções reais calculadas pelo Turf.js
+            atualizarResultadosCartao('car', totalSobreposicaoCar, "Sobreposição do imóvel com limites cadastrados do CAR.");
+            atualizarResultadosCartao('uc', totalSobreposicaoUc, "Gleba cruza reservas ecológicas ou UCs reguladas.", true);
+            atualizarResultadosCartao('ti', totalSobreposicaoTi, "Sobreposição com terras de preservação e demarcação indígena.", true);
+
+            // Gravar análise calculada na sessão para impressão do Laudo
+            analiseCalculadaAtiva = {
+                contrato: contrato,
+                areaHa: areaHa,
+                carPct: totalSobreposicaoCar,
+                ucPct: totalSobreposicaoUc,
+                tiPct: totalSobreposicaoTi,
+                data: new Date().toLocaleDateString('pt-BR'),
+                certificadoId: Math.random().toString(36).substr(2, 9).toUpperCase()
+            };
+
+            logTerminal(`[Turf.js] Processamento espacial finalizado em tempo real.`, "success");
+        }
+
+        function atualizarResultadosCartao(tipo, pct, desc, restritiva = false) {
+            const card = document.getElementById(`card-check-${tipo}`);
+            const text = document.getElementById(`text-${tipo}`);
+            const pctLabel = document.getElementById(`overlap-${tipo}-pct`);
+            const icon = document.getElementById(`icon-${tipo}`);
+
+            pctLabel.innerText = `${pct.toFixed(1)}%`;
+
+            if (pct === 0) {
+                card.className = "border rounded-xl p-3 text-xs bg-emerald-50 border-emerald-200 text-emerald-950";
+                text.innerText = "Sem riscos detectados nesta camada.";
+                pctLabel.className = "font-bold text-emerald-700";
+                icon.className = "w-4 h-4 text-emerald-600";
+            } else if (pct > 0 && pct < 15 && !restritiva) {
+                card.className = "border rounded-xl p-3 text-xs bg-slate-50 border-slate-200";
+                text.innerText = desc;
+                pctLabel.className = "font-bold text-slate-700";
+                icon.className = "w-4 h-4 text-slate-500";
+            } else if (pct > 0 && pct < 15 && restritiva) {
+                card.className = "border rounded-xl p-3 text-xs bg-yellow-50 border-yellow-200 text-yellow-950";
+                text.innerText = `Alerta: Sobreposição detectada de ${pct.toFixed(1)}% nesta gleba.`;
+                pctLabel.className = "font-bold text-yellow-700";
+                icon.className = "w-4 h-4 text-yellow-600";
+            } else {
+                card.className = "border rounded-xl p-3 text-xs bg-rose-50 border-rose-200 text-rose-950";
+                text.innerText = `BLOQUEADO: Sobreposição de risco de ${pct.toFixed(1)}% impede concessão automática.`;
+                pctLabel.className = "font-bold text-rose-700";
+                icon.className = "w-4 h-4 text-rose-600";
+            }
+        }
+
+        // ================= LAUDO TÉCNICO (PDF PREVIEW) =================
+
+        function mostrarLaudo() {
+            if (!analiseCalculadaAtiva.contrato) return;
+
+            const modal = document.getElementById('modal-laudo');
+            const data = analiseCalculadaAtiva;
+            
+            document.getElementById('laudo-id-certificado').innerText = `BRB-${data.certificadoId}-2026`;
+            document.getElementById('laudo-data').innerText = data.data;
+            document.getElementById('laudo-cliente').innerText = data.contrato.cliente;
+            document.getElementById('laudo-contrato').innerText = data.contrato.contrato;
+            document.getElementById('laudo-agencia').innerText = data.contrato.agencia;
+            document.getElementById('laudo-linha').innerText = data.contrato.linha;
+            document.getElementById('laudo-area-ha').innerText = `${data.areaHa.toFixed(2)} Hectares`;
+
+            // Valores de sobreposição calculados
+            const carHa = (data.areaHa * (data.carPct / 100));
+            const ucHa = (data.areaHa * (data.ucPct / 100));
+            const tiHa = (data.areaHa * (data.tiPct / 100));
+
+            document.getElementById('laudo-car-ha').innerText = `${carHa.toFixed(2)} ha`;
+            document.getElementById('laudo-car-pct').innerText = `${data.carPct.toFixed(1)}%`;
+            document.getElementById('laudo-uc-ha').innerText = `${ucHa.toFixed(2)} ha`;
+            document.getElementById('laudo-uc-pct').innerText = `${data.ucPct.toFixed(1)}%`;
+            document.getElementById('laudo-ti-ha').innerText = `${tiHa.toFixed(2)} ha`;
+            document.getElementById('laudo-ti-pct').innerText = `${data.tiPct.toFixed(1)}%`;
+
+            // Status e pareceres
+            const carStatus = document.getElementById('laudo-car-status');
+            const ucStatus = document.getElementById('laudo-uc-status');
+            const tiStatus = document.getElementById('laudo-ti-status');
+            const parecerBox = document.getElementById('laudo-parecer-container');
+            const parecerTitulo = document.getElementById('laudo-parecer-titulo');
+            const parecerTexto = document.getElementById('laudo-parecer-texto');
+
+            carStatus.innerText = data.carPct > 80 ? "COMPATÍVEL" : (data.carPct > 0 ? "REVISÃO REQUERIDA" : "NÃO MAPEADO");
+            carStatus.className = data.carPct > 80 ? "p-2 text-right font-bold text-emerald-700" : "p-2 text-right font-bold text-amber-600";
+
+            ucStatus.innerText = data.ucPct > 10 ? "BLOQUEANTE" : (data.ucPct > 0 ? "REVISÃO REQUERIDA" : "CONFORME");
+            ucStatus.className = data.ucPct > 10 ? "p-2 text-right font-bold text-rose-700" : (data.ucPct > 0 ? "p-2 text-right font-bold text-amber-600" : "p-2 text-right font-bold text-emerald-700");
+
+            tiStatus.innerText = data.tiPct > 5 ? "BLOQUEANTE" : (data.tiPct > 0 ? "REVISÃO REQUERIDA" : "CONFORME");
+            tiStatus.className = data.tiPct > 5 ? "p-2 text-right font-bold text-rose-700" : (data.tiPct > 0 ? "p-2 text-right font-bold text-amber-600" : "p-2 text-right font-bold text-emerald-700");
+
+            // Configurar o Parecer Geral
+            if (data.contrato.statusAmbiental === "Regular") {
+                parecerBox.className = "p-4 rounded-xl text-xs space-y-1.5 bg-emerald-50 border border-emerald-200 text-emerald-950";
+                parecerTitulo.innerText = "PARECER TÉCNICO: APTO PARA CONCESSÃO DE CRÉDITO";
+                parecerTexto.innerText = "Após análise geoespacial com as bases federais do SICAR, unidades de conservação do MMA e terras indígenas da FUNAI, as glebas deste contrato não apresentam nenhuma sobreposição restritiva. A operação está plenamente em conformidade com as diretrizes de sustentabilidade do Banco.";
+            } else if (data.contrato.statusAmbiental === "Alerta") {
+                parecerBox.className = "p-4 rounded-xl text-xs space-y-1.5 bg-amber-50 border border-amber-200 text-amber-950";
+                parecerTitulo.innerText = "PARECER TÉCNICO: REVISÃO DE CADASTRO OBRIGATÓRIA";
+                parecerTexto.innerText = "Foram localizados pontos de inconsistência moderada. O empreendimento possui sobreposições limítrofes com áreas de proteção integral. É necessária a solicitação de documentação ambiental complementar ou parecer do analista de campo antes da liberação do saldo.";
+            } else {
+                parecerBox.className = "p-4 rounded-xl text-xs space-y-1.5 bg-rose-50 border border-rose-200 text-rose-950";
+                parecerTitulo.innerText = "PARECER TÉCNICO: BLOQUEIO AMBIENTAL DO CONTRATO";
+                parecerTexto.innerText = "Inviabilidade de crédito por descumprimento de condicionantes socioambientais. Foi detectada sobreposição crítica de alta magnitude com Terra Indígena demarcada e área de Reserva Ecológica não passível de fomento financeiro de acordo com a regulação de sustentabilidade.";
+            }
+
+            document.getElementById('laudo-checksum').innerText = `SHA256: ${Math.random().toString(36).substring(3, 15).toUpperCase()}X89`;
+
+            modal.classList.remove('hidden');
+        }
+
+        function fecharLaudo() {
+            document.getElementById('modal-laudo').classList.add('hidden');
+        }
+
+        function imprimirLaudo() {
+            // Abre área de impressão do sistema
+            window.print();
+        }
+
+        // ================= MÓDULO 2: DASHBOARD DA CARTEIRA =================
+
+        function construirGraficosDashboard() {
+            // Gráfico 1: Tipo de Alertas
+            const ctxAlertas = document.getElementById('chart-alertas').getContext('2d');
+            chartAlertas = new Chart(ctxAlertas, {
+                type: 'bar',
+                data: {
+                    labels: ['Sobrep. CAR', 'Reserva Legal', 'Terra Indígena', 'Embargo IBAMA'],
+                    datasets: [{
+                        label: 'Número de Contratos afetados',
+                        data: [12, 4, 1, 2],
+                        backgroundColor: [
+                            'rgba(245, 158, 11, 0.75)',
+                            'rgba(13, 148, 136, 0.75)',
+                            'rgba(124, 58, 237, 0.75)',
+                            'rgba(225, 29, 72, 0.75)'
+                        ],
+                        borderColor: [
+                            '#d97706',
+                            '#0d9488',
+                            '#7c3aed',
+                            '#be123c'
+                        ],
+                        borderWidth: 1.5,
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 9 } } },
+                        x: { grid: { display: false }, ticks: { font: { size: 9 } } }
+                    }
+                }
+            });
+
+            // Gráfico 2: Donut de Situação Ambiental
+            const ctxSituacao = document.getElementById('chart-situacao-donut').getContext('2d');
+            chartSituacao = new Chart(ctxSituacao, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Regular', 'Alerta', 'Bloqueado'],
+                    datasets: [{
+                        data: [78, 16, 6],
+                        backgroundColor: [
+                            '#10b981',
+                            '#f59e0b',
+                            '#ef4444'
+                        ],
+                        borderWidth: 2,
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 9 } } }
+                    },
+                    cutout: '70%'
+                }
+            });
+        }
+
+        function aplicarFiltrosDashboard() {
+            atualizarDashboard();
+        }
+
+        function resetarFiltrosDashboard() {
+            document.getElementById('filter-status').value = "TODOS";
+            document.getElementById('filter-risco').value = "TODOS";
+            
+            const checks = document.getElementsByName('chk-estado');
+            checks.forEach(c => c.checked = true);
+
+            atualizarDashboard();
+        }
+
+        function atualizarDashboard() {
+            // Capturar critérios dos filtros
+            const filtroStatus = document.getElementById('filter-status').value;
+            const filtroRisco = document.getElementById('filter-risco').value;
+            
+            const checks = document.getElementsByName('chk-estado');
+            const estadosAtivos = Array.from(checks).filter(c => c.checked).map(c => c.value);
+
+            // Filtrar contratos localmente
+            const contratosFiltrados = CONTRATOS_MOCK.filter(contrato => {
+                const checkStatus = filtroStatus === "TODOS" || contrato.statusAmbiental === filtroStatus;
+                const checkRisco = filtroRisco === "TODOS" || contrato.riscoCAR === filtroRisco;
+                const checkEstado = estadosAtivos.includes(contrato.estado);
+                return checkStatus && checkRisco && checkEstado;
+            });
+
+            // Recalcular KPIs com base na lista filtrada
+            let totalVolume = 0;
+            let totalArea = 0;
+            let countRegular = 0;
+            let countAlerta = 0;
+            let countBloqueado = 0;
+
+            contratosFiltrados.forEach(c => {
+                totalVolume += c.valor;
+                totalArea += c.areaHectares;
+                if (c.statusAmbiental === "Regular") countRegular++;
+                if (c.statusAmbiental === "Alerta") countAlerta++;
+                if (c.statusAmbiental === "Bloqueado") countBloqueado++;
+            });
+
+            const regularPct = contratosFiltrados.length > 0 ? (countRegular / contratosFiltrados.length) * 100 : 0;
+
+            // Renderizar KPIs na Tela
+            document.getElementById('kpi-total-carteira').innerText = (totalVolume / 1000000).toFixed(2) + " M";
+            document.getElementById('kpi-area-inspeccionada').innerText = totalArea.toFixed(1) + " ha";
+            document.getElementById('kpi-regular-pct').innerText = regularPct.toFixed(1) + "%";
+            document.getElementById('kpi-alerta-count').innerText = countAlerta;
+            document.getElementById('kpi-bloqueado-count').innerText = countBloqueado;
+
+            // Atualizar Tabela do Dashboard
+            const tbody = document.getElementById('tabela-contratos-body');
+            tbody.innerHTML = '';
+
+            document.getElementById('table-row-count').innerText = `Exibindo ${contratosFiltrados.length} contratos`;
+
+            contratosFiltrados.forEach(c => {
+                let statusClass = "bg-emerald-100 text-emerald-800";
+                let statusTxt = "Conforme";
+                if (c.statusAmbiental === "Alerta") {
+                    statusClass = "bg-yellow-100 text-yellow-800";
+                    statusTxt = "Atenção";
+                } else if (c.statusAmbiental === "Bloqueado") {
+                    statusClass = "bg-rose-100 text-rose-800";
+                    statusTxt = "Bloqueado";
+                }
+
+                let riscoClass = "text-emerald-700 font-bold";
+                if (c.riscoCAR === "Medio") riscoClass = "text-yellow-600 font-bold";
+                if (c.riscoCAR === "Alto") riscoClass = "text-rose-600 font-bold";
+
+                const row = `
+                    <tr class="hover:bg-slate-50 transition-all border-b border-slate-100">
+                        <td class="py-3 px-4 font-mono font-bold">${c.contrato}</td>
+                        <td class="py-3 px-4 font-medium text-slate-800">${c.cliente}</td>
+                        <td class="py-3 px-4 text-slate-500">${c.municipio} (${c.estado})</td>
+                        <td class="py-3 px-4 text-right font-mono text-slate-700">${c.areaHectares.toFixed(1)} ha</td>
+                        <td class="py-3 px-4 text-center">
+                            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold ${statusClass}">${statusTxt}</span>
+                        </td>
+                        <td class="py-3 px-4 text-center ${riscoClass}">${c.riscoCAR}</td>
+                        <td class="py-3 px-4 text-center">
+                            <button onclick="carregarContratoNoMapaAnalise('${c.contrato}', '${c.agencia}')" class="bg-emerald-50 hover:bg-emerald-100 text-[#005d3b] px-2 py-1 rounded text-[11px] font-bold flex items-center gap-1 mx-auto transition-all">
+                                <i data-lucide="zoom-in" class="w-3.5 h-3.5"></i>
+                                Analisar Espacialmente
+                            </button>
+                        </td>
+                    </tr>
+                `;
+                tbody.innerHTML += row;
+            });
+
+            // Atualizar Marcadores no Mapa do Dashboard
+            dashboardMarkersGroup.clearLayers();
+            const markers = [];
+
+            contratosFiltrados.forEach(c => {
+                // Pin personalizado baseado no status
+                let color = "#10b981"; // Conforme (Verde)
+                if (c.statusAmbiental === "Alerta") color = "#f59e0b"; // Alerta (Laranja)
+                if (c.statusAmbiental === "Bloqueado") color = "#ef4444"; // Bloqueado (Vermelho)
+
+                // Coordenada do centroide aproximada
+                const centroide = c.coordenadasGleba[0];
+
+                const marker = L.circleMarker([centroide[1], centroide[0]], {
+                    radius: 8,
+                    fillColor: color,
+                    color: '#ffffff',
+                    weight: 2,
+                    fillOpacity: 0.95
+                });
+
+                marker.bindPopup(`
+                    <div class="text-xs space-y-1">
+                        <p class="font-bold text-[#005d3b]">${c.cliente}</p>
+                        <p>Contrato: <strong>${c.contrato}</strong></p>
+                        <p>Área: <strong>${c.areaHectares.toFixed(1)} ha</strong></p>
+                        <p>Estado Ambiental: <strong>${c.statusAmbiental}</strong></p>
+                        <button onclick="carregarContratoNoMapaAnalise('${c.contrato}', '${c.agencia}')" class="w-full mt-2 bg-[#005d3b] text-white font-bold py-1 px-2 rounded text-[10px]">Analisar Detalhes</button>
+                    </div>
+                `);
+
+                marker.addTo(dashboardMarkersGroup);
+                markers.push(marker);
+            });
+
+            // Centralizar mapa do dashboard para abranger os pontos visíveis
+            if (markers.length > 0) {
+                const group = new L.featureGroup(markers);
+                mapDashboard.fitBounds(group.getBounds(), { padding: [50, 50] });
+            }
+
+            // Atualizar os Gráficos com os Novos Counts Filtrados
+            atualizarGraficosDashboard(contratosFiltrados, countRegular, countAlerta, countBloqueado);
+            lucide.createIcons();
+        }
+
+        function atualizarGraficosDashboard(contratos, regular, alerta, bloqueado) {
+            if (!chartAlertas || !chartSituacao) return;
+
+            // Recalcular sobreposições para o gráfico de barras
+            let carAlerts = 0;
+            let ucAlerts = 0;
+            let tiAlerts = 0;
+
+            contratos.forEach(c => {
+                if (c.statusAmbiental === "Alerta") carAlerts++;
+                if (c.ucPolygon) ucAlerts++;
+                if (c.tiPolygon) tiAlerts++;
+            });
+
+            chartAlertas.data.datasets[0].data = [carAlerts, ucAlerts, tiAlerts, bloqueado];
+            chartAlertas.update();
+
+            chartSituacao.data.datasets[0].data = [regular, alerta, bloqueado];
+            chartSituacao.update();
+        }
+
+        // Integração direta: Abre aba do GeoValida e executa a simulação de análise automática
+        function carregarContratoNoMapaAnalise(contratoNum, agencia) {
+            switchTab('geovalida');
+            
+            document.getElementById('input-agencia').value = agencia;
+            document.getElementById('input-contrato').value = contratoNum;
+            document.getElementById('input-aditivo').value = "0";
+
+            setTimeout(() => {
+                executarAnaliseGeoValida();
+            }, 500);
+        }
+    </script>
+</body>
+</html>
